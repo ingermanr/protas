@@ -38,12 +38,17 @@ Runner: `python3 -m unittest discover -s tests`.
 
 ## Tasks
 
-- T1 (S1,S2): esquema `workspaces` + `tasks` con `project_id` — route: inline — commit: wu1
-- T2 (S3,S4,S5,S6,S9): promover, menciones, estado vivo — route: inline — commit: wu2
-- T3 (S7,S8): arrastre de tareas y de menciones — route: inline — commit: wu2
-- T4 (S10,S11): notas por workspace y búsqueda — route: inline — commit: wu3
-- T5 (S12): migración de la base anterior — route: inline — commit: wu3
-- T6: CLI y TUI sobre el modelo nuevo — route: inline — commit: wu4
+- T1 (S1,S2): esquema `workspaces` + `tasks` con `project_id` — route: inline — commit: 27ef3aa
+- T2 (S3,S4,S5,S6,S9): promover, menciones, estado vivo — route: inline — commit: 27ef3aa
+- T3 (S7,S8): arrastre de tareas y de menciones — route: inline — commit: 27ef3aa
+- T4 (S10,S11): notas por workspace y búsqueda — route: inline — commit: 27ef3aa
+- T5 (S12): migración de la base anterior — route: inline — commit: 27ef3aa
+- T6: CLI y TUI sobre el modelo nuevo — route: inline — commit: 27ef3aa
+
+El cambio del modelo es atómico: el esquema, el store, la CLI, la TUI y los
+tests cambian juntos, porque un estado intermedio deja la aplicación rota.
+Por eso va en un solo work unit y no en varios commits artificially
+partidos. Documentación y packaging van aparte (2447c56, 4942936).
 
 ## Log
 
