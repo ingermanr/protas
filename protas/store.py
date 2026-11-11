@@ -25,7 +25,7 @@ import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date as Date
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -119,6 +119,53 @@ class ProjectHistory:
     first_day: Optional[str]
     last_day: Optional[str]
     days: list[str]
+
+
+@dataclass
+class DayStat:
+    """One day of the agenda."""
+
+    date: str
+    tasks: int
+    done: int
+    projects: int
+
+    @property
+    def adherence(self) -> float:
+        if not self.tasks:
+            return 0.0
+        return self.done / self.tasks
+
+
+@dataclass
+class ProjectStat:
+    """One project seen through its history."""
+
+    workspace: Workspace
+    total: int
+    done: int
+    days_active: int
+    first_day: Optional[str]
+    last_day: Optional[str]
+
+    @property
+    def progress(self) -> float:
+        if not self.total:
+            return 0.0
+        return self.done / self.total
+
+
+@dataclass
+class Stats:
+    """The numbers of a period."""
+
+    window: list[DayStat]
+    streak: int
+    started: int
+    finished: int
+    completed_per_day: int
+    active_days: int
+    projects: list[ProjectStat]
 
 
 def describe_event(entry: HistoryEntry) -> str:
@@ -754,6 +801,131 @@ class Store:
             first_day=days[0] if days else None,
             last_day=days[-1] if days else None,
             days=days,
+        )
+
+    # ------------------------------------------------------------------
+    # statistics
+    # ------------------------------------------------------------------
+    def stats(self, days: int = 14) -> Stats:
+        """Numbers for the last ``days`` days.
+
+        A pending task rolls into the next day, so counting agenda rows
+        would charge the same task once per day. The compliance is counted
+        by lineage instead: one task is one commitment, no matter how many
+        days it survived.
+        """
+        days = max(days, 1)
+        end = Date.today()
+        start = end - timedelta(days=days - 1)
+        window_dates = [
+            (start + timedelta(days=offset)).strftime(ISO_FORMAT) for offset in range(days)
+        ]
+
+        rows = self.conn.execute(
+            """SELECT t.id, t.origin_id, t.done, t.project_id, w.date AS date
+               FROM tasks t JOIN workspaces w ON w.id = t.workspace_id
+               WHERE w.kind = 'day'"""
+        ).fetchall()
+
+        by_id = {row["id"]: row for row in rows}
+
+        def root_of(task_id: int) -> int:
+            current = by_id[task_id]
+            seen = {task_id}
+            while current["origin_id"] in by_id and current["origin_id"] not in seen:
+                seen.add(current["origin_id"])
+                current = by_id[current["origin_id"]]
+            return current["id"]
+
+        lineages: dict[int, dict] = {}
+        per_day: dict[str, dict[str, int]] = {}
+
+        for row in rows:
+            day = per_day.setdefault(row["date"], {"tasks": 0, "done": 0, "projects": 0})
+            if row["project_id"] is not None:
+                day["projects"] += 1
+                continue
+
+            day["tasks"] += 1
+            if row["done"]:
+                day["done"] += 1
+
+            root = root_of(row["id"])
+            info = lineages.get(root)
+            if info is None:
+                lineages[root] = {
+                    "first": row["date"],
+                    "newest": (row["date"], row["id"]),
+                    "done": bool(row["done"]),
+                }
+                continue
+
+            if row["date"] < info["first"]:
+                info["first"] = row["date"]
+            if (row["date"], row["id"]) > info["newest"]:
+                info["newest"] = (row["date"], row["id"])
+                info["done"] = bool(row["done"])
+
+        window = [
+            DayStat(
+                date=date,
+                tasks=per_day.get(date, {}).get("tasks", 0),
+                done=per_day.get(date, {}).get("done", 0),
+                projects=per_day.get(date, {}).get("projects", 0),
+            )
+            for date in window_dates
+        ]
+
+        started = 0
+        finished = 0
+        for info in lineages.values():
+            if info["first"] in window_dates:
+                started += 1
+                if info["done"]:
+                    finished += 1
+
+        active = {
+            row["date"]
+            for row in rows
+            if row["done"] and row["project_id"] is None
+        }
+        active.update(
+            row["date"] for row in self.conn.execute("SELECT DISTINCT date FROM events").fetchall()
+        )
+
+        streak = 0
+        cursor = Date.today()
+        if cursor.strftime(ISO_FORMAT) not in active:
+            cursor -= timedelta(days=1)
+        while cursor.strftime(ISO_FORMAT) in active:
+            streak += 1
+            cursor -= timedelta(days=1)
+
+        completed_per_day = sum(stat.done for stat in window)
+        active_days = sum(1 for stat in window if stat.done or stat.projects)
+
+        projects: list[ProjectStat] = []
+        for project in self.projects():
+            history = self.history(project.workspace.id)
+            projects.append(
+                ProjectStat(
+                    workspace=project.workspace,
+                    total=project.total,
+                    done=project.done,
+                    days_active=len(history.days),
+                    first_day=history.first_day,
+                    last_day=history.last_day,
+                )
+            )
+
+        return Stats(
+            window=window,
+            streak=streak,
+            started=started,
+            finished=finished,
+            completed_per_day=completed_per_day,
+            active_days=active_days,
+            projects=projects,
         )
 
     # ------------------------------------------------------------------

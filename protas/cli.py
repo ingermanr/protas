@@ -71,6 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("projects", help="list every project")
 
+    stats = sub.add_parser("stats", help="numbers of the last days")
+    stats.add_argument("--days", type=int, default=14, help="size of the window")
+    stats.add_argument("--json", action="store_true", help="machine readable output")
+
     history = sub.add_parser("history", help="show the story of a project")
     history.add_argument("id", type=int, help="id of the project")
     history.add_argument("--json", action="store_true", help="machine readable output")
@@ -315,6 +319,100 @@ def cmd_history(store: Store, args) -> int:
     return 0
 
 
+def cmd_stats(store: Store, args) -> int:
+    stats = store.stats(days=args.days)
+    today_counts = store.counts(store.open_day(today()).id)
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "today": today_counts,
+                    "window_days": args.days,
+                    "days": [
+                        {
+                            "date": stat.date,
+                            "tasks": stat.tasks,
+                            "done": stat.done,
+                            "projects": stat.projects,
+                        }
+                        for stat in stats.window
+                    ],
+                    "completed": stats.completed_per_day,
+                    "active_days": stats.active_days,
+                    "started": stats.started,
+                    "finished": stats.finished,
+                    "streak": stats.streak,
+                    "projects": [
+                        {
+                            "title": project.workspace.title,
+                            "done": project.done,
+                            "total": project.total,
+                            "days_active": project.days_active,
+                            "first_day": project.first_day,
+                            "last_day": project.last_day,
+                        }
+                        for project in stats.projects
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    print("Hoy")
+    print(
+        f"  {today_counts['open']} pendientes | {today_counts['done']} hechas"
+        f" | {today_counts['projects']} proyectos"
+    )
+
+    print()
+    print(f"Ritmo (ultimos {args.days} dias)")
+    peak = max((stat.done for stat in stats.window), default=0)
+    for stat in stats.window:
+        bar = "#" * round(stat.done * 24 / peak) if peak and stat.done else ""
+        print(f"  {stat.date}  {bar:<24} {stat.done}")
+    average = stats.completed_per_day / stats.active_days if stats.active_days else 0
+    print(
+        f"  {stats.completed_per_day} completadas | {average:.1f} por dia activo"
+        f" | {stats.active_days} dias con actividad"
+    )
+
+    print()
+    print("Cumplimiento")
+    if stats.started:
+        percent = round(stats.finished / stats.started * 100)
+        print(f"  {percent}% ({stats.finished} de {stats.started} tareas que arrancaste)")
+    else:
+        print("  sin tareas nuevas en el periodo")
+
+    print()
+    print("Proyectos")
+    if stats.projects:
+        for project in stats.projects:
+            bar = _progress_bar(project.progress)
+            span = ""
+            if project.first_day and project.last_day:
+                span = f"  del {project.first_day} al {project.last_day}"
+            print(
+                f"  {project.workspace.title:<28} {bar}  {project.done}/{project.total}"
+                f"  {project.days_active} dias activos{span}"
+            )
+    else:
+        print("  sin proyectos")
+
+    print()
+    print("Racha")
+    print(f"  {stats.streak} dias seguidos con actividad")
+    return 0
+
+
+def _progress_bar(progress: float, width: int = 10) -> str:
+    filled = round(progress * width)
+    return "#" * filled + "." * (width - filled)
+
+
 def cmd_export(store: Store, args) -> int:
     out_dir = Path(args.out or "protas-export")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -418,6 +516,7 @@ COMMANDS = {
     "promote": cmd_promote,
     "mention": cmd_mention,
     "projects": cmd_projects,
+    "stats": cmd_stats,
     "history": cmd_history,
     "export": cmd_export,
     "search": cmd_search,

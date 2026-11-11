@@ -108,6 +108,12 @@ def _draw(
                 stdscr.addstr(body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width))
             except curses.error:
                 pass
+    elif visible and view == "stats":
+        for index, line in enumerate(_stats_lines(store)[:visible]):
+            try:
+                stdscr.addstr(body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width))
+            except curses.error:
+                pass
     elif visible:
         offset = 0
         if selection >= visible:
@@ -148,6 +154,34 @@ def _draw(
             pass
 
     stdscr.refresh()
+
+
+def _stats_lines(store: Store, days: int = 14) -> list[str]:
+    """The numbers of the last days, ready to draw."""
+    stats = store.stats(days=days)
+    peak = max((stat.done for stat in stats.window), default=0)
+
+    lines = [" Ritmo"]
+    for stat in stats.window:
+        bar = "#" * round(stat.done * 20 / peak) if peak and stat.done else ""
+        lines.append(f"  {stat.date[5:]}  {bar:<20} {stat.done}")
+
+    lines.append("")
+    lines.append(f" {stats.completed_per_day} completadas en {days} dias")
+    if stats.started:
+        percent = round(stats.finished / stats.started * 100)
+        lines.append(f" Cumplimiento {percent}% ({stats.finished} de {stats.started})")
+    lines.append(f" Racha {stats.streak} dias seguidos")
+
+    if stats.projects:
+        lines.append("")
+        lines.append(" Proyectos")
+        for project in stats.projects:
+            lines.append(
+                f"  {project.workspace.title[:28]:<28} {project.done}/{project.total}"
+                f"  {project.days_active} dias"
+            )
+    return lines
 
 
 def _history_lines(store: Store, workspace: Workspace) -> list[str]:
@@ -341,9 +375,11 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 view = "history"
             else:
                 message = "el historial es de los proyectos"
+        elif ch == ord("s"):
+            view = "tasks" if view == "stats" else "stats"
         elif ch == 27:
             # Escape goes back to the day when a project is open.
-            if view == "history":
+            if view in ("history", "stats"):
                 view = "tasks"
             elif workspace.is_project:
                 workspace = current_day

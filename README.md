@@ -49,6 +49,7 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `x` | borrar la entrada |
 | `enter` | abrir el proyecto de una mención |
 | `h` | ver la historia del proyecto |
+| `s` | ver los números |
 | `esc` | volver del proyecto al día |
 | `←` / `→` | moverse entre días |
 | `q` | salir |
@@ -96,6 +97,36 @@ del 2026-11-09 al 2026-11-10 (2 dia(s) con actividad)
 ```
 
 En la TUI, la tecla `h` muestra la historia del proyecto abierto.
+
+### Estadísticas
+
+`protas stats` resume los últimos días: el ritmo, el cumplimiento, los
+proyectos y la racha.
+
+```
+$ protas stats
+Hoy
+  3 pendientes | 1 hechas | 2 proyectos
+
+Ritmo (ultimos 14 dias)
+  2026-10-29  ################         2
+  2026-10-30  ################         2
+  ...
+  31 completadas | 2.2 por dia activo | 14 dias con actividad
+
+Cumplimiento
+  76% (31 de 41 tareas que arrancaste)
+
+Proyectos
+  Migrar la base de datos      #####.....  2/4  3 dias activos  del 2026-11-08 al 2026-11-11
+
+Racha
+  14 dias seguidos con actividad
+```
+
+El **cumplimiento** cuenta por linaje, no por día: una tarea que sobrevive
+tres días es un compromiso, no tres, así que tener pendientes no te
+castiga dos veces. En la TUI, la tecla `s` muestra los números.
 
 ### Búsqueda
 
@@ -154,5 +185,4 @@ python3 -m unittest discover -s tests
   panel para marcarlas, leyendo la misma base de datos.
 - Resultados de búsqueda dentro de la TUI, navegables.
 - Tareas recurrentes, prioridades y estimación de tiempo.
-- Estadísticas: horas de foco, tareas completadas por día, proyectos vivos.
 - Exportación a Markdown (ya disponible) y a Obsidian.
