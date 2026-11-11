@@ -120,7 +120,7 @@ def render_workspace(store: Store, workspace: Workspace) -> str:
     if tasks:
         lines.append("")
         for task in tasks:
-            lines.extend(render_entry(store, task, 0))
+            lines.extend(render_entry(store, task, 0, workspace.date))
     else:
         lines.extend(["", "(no tasks yet)"])
 
@@ -140,7 +140,7 @@ def render_workspace(store: Store, workspace: Workspace) -> str:
     return "\n".join(lines)
 
 
-def render_entry(store: Store, task: Task, depth: int) -> list[str]:
+def render_entry(store: Store, task: Task, depth: int, reference_date: str | None = None) -> list[str]:
     """Render an entry and its children."""
     marker = "[x]" if store.is_done(task) else "[ ]"
     indent = "    " * depth
@@ -152,10 +152,12 @@ def render_entry(store: Store, task: Task, depth: int) -> list[str]:
             line += f"  (proyecto {state['done']}/{state['total']})"
         else:
             line += "  (proyecto)"
+    else:
+        line += store.origin_label(task, reference_date)
 
     lines = [line]
     for child in task.children:
-        lines.extend(render_entry(store, child, depth + 1))
+        lines.extend(render_entry(store, child, depth + 1, reference_date))
     return lines
 
 

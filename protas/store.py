@@ -614,6 +614,41 @@ class Store:
                 return project.title
         return task.text
 
+    def origin_date(self, task: Task) -> Optional[str]:
+        """The day a carried entry comes from."""
+        if task.origin_id is None:
+            return None
+        origin = self.task(task.origin_id)
+        if origin is None:
+            return None
+        workspace = self.workspace(origin.workspace_id)
+        if workspace is None or not workspace.date:
+            return None
+        return workspace.date
+
+    def origin_label(self, task: Task, reference_date: str | None = None) -> str:
+        """Where an entry comes from, for the user to read.
+
+        An entry that was carried from another day says so, so the agenda
+        shows what came from yesterday and what was added today.
+        """
+        date = self.origin_date(task)
+        if not date:
+            return ""
+
+        reference = reference_date or today()
+        if date == reference:
+            return ""
+        try:
+            previous = (
+                Date.fromisoformat(reference) - timedelta(days=1)
+            ).strftime(ISO_FORMAT)
+        except ValueError:
+            previous = ""
+        if date == previous:
+            return "  (de ayer)"
+        return f"  (de {date})"
+
     def counts(self, workspace_id: int) -> dict[str, int]:
         """Totals for a workspace, with the live state of its entries."""
         tasks = self.tasks_of(workspace_id)

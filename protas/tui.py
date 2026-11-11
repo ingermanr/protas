@@ -136,6 +136,8 @@ def _draw(
             if task.is_mention:
                 state = store.project_state(task.project_id)
                 label += f"  (proyecto {state['done']}/{state['total']})" if state["total"] else "  (proyecto)"
+            else:
+                label += store.origin_label(task, workspace.date)
             line = f" {'    ' * depth}[{marker}] {label}"
             attribute = curses.A_DIM if store.is_done(task) else curses.A_NORMAL
             if index + offset == selection:
