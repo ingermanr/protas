@@ -1,0 +1,17 @@
+[project]
+name = "protas"
+version = "0.1.0"
+description = "Daily notes and tasks: one workspace per day, pending work rolls forward"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+protas = "protas.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["protas"]
