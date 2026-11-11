@@ -152,6 +152,36 @@ class RolloverTest(unittest.TestCase):
 
         self.assertEqual(len(self.store.tasks_of(self.day("2026-11-12").id)), 1)
 
+    def test_the_day_never_gets_the_same_project_twice(self):
+        """A project already on the agenda is not added again."""
+        first = self.day("2026-11-10")
+        task = self.store.add_task("Migrar", first.id)
+        project = self.store.promote(task.id)
+        self.store.add_task("Esquema", project.id)
+
+        # the project is explicitly put on the agenda of the next day
+        second = self.day("2026-11-11")
+        self.store.add_mention(project.id, second.id)
+
+        self.store.rollover("2026-11-12")
+
+        entries = self.store.tasks_of(self.day("2026-11-12").id)
+        mentions = [entry for entry in entries if entry.is_mention]
+        self.assertEqual(len(mentions), 1)
+
+    def test_the_day_never_gets_the_same_project_twice_after_a_roll(self):
+        first = self.day("2026-11-10")
+        task = self.store.add_task("Migrar", first.id)
+        project = self.store.promote(task.id)
+        self.store.add_task("Esquema", project.id)
+
+        self.store.rollover("2026-11-11")
+        self.store.rollover("2026-11-12")
+
+        entries = self.store.tasks_of(self.day("2026-11-12").id)
+        mentions = [entry for entry in entries if entry.is_mention]
+        self.assertEqual(len(mentions), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

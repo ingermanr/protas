@@ -677,10 +677,22 @@ class Store:
                 continue
             if self._already_carried(source["id"], target_workspace.id):
                 continue
+            if source["project_id"] is not None and self._already_mentioned(
+                source["project_id"], target_workspace.id
+            ):
+                # The day already has this project on its agenda.
+                continue
             carried.append(self._copy_entry(source, target_workspace.id))
 
         self.conn.commit()
         return carried
+
+    def _already_mentioned(self, project_id: int, workspace_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM tasks WHERE workspace_id = ? AND project_id = ?",
+            (workspace_id, project_id),
+        ).fetchone()
+        return row is not None
 
     def _entry_is_done(self, row: sqlite3.Row) -> bool:
         if row["project_id"] is not None:

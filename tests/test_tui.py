@@ -63,6 +63,26 @@ class TuiSmokeTest(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_the_note_of_the_day_is_drawn_above_the_entries(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.store import Store
+        from protas.tui import _note_lines
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(path=Path(tmp) / "protas.db")
+            try:
+                day = store.ensure_day("2026-11-11")
+                store.set_note(day.id, "Dia tranquilo\nPrioridad: cerrar la migracion")
+                day = store.workspace(day.id)
+
+                lines = _note_lines(day)
+
+                self.assertEqual(len(lines), 3)
+                self.assertIn("Dia tranquilo", lines[0])
+                self.assertIn("Prioridad", lines[1])
+            finally:
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -115,10 +115,22 @@ def _draw(
             except curses.error:
                 pass
     elif visible:
+        note_lines = _note_lines(workspace)
+        rows_top = body_top + len(note_lines)
+        room = max(visible - len(note_lines), 0)
+
+        for offset_index, line in enumerate(note_lines):
+            try:
+                stdscr.addstr(
+                    body_top + offset_index, 0, _clip(line.ljust(max(width - 1, 0)), width)
+                )
+            except curses.error:
+                pass
+
         offset = 0
-        if selection >= visible:
-            offset = selection - visible + 1
-        for index, (task, depth) in enumerate(rows[offset : offset + visible]):
+        if selection >= room:
+            offset = selection - room + 1
+        for index, (task, depth) in enumerate(rows[offset : offset + room]):
             marker = "x" if store.is_done(task) else " "
             label = store.title_of(task)
             if task.is_mention:
@@ -130,11 +142,11 @@ def _draw(
                 attribute |= curses.A_REVERSE
             try:
                 stdscr.addstr(
-                    body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width), attribute
+                    rows_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width), attribute
                 )
             except curses.error:
                 pass
-        if not rows:
+        if not rows and not note_lines:
             try:
                 stdscr.addstr(body_top, 0, _clip(" (sin tareas todavia) ", width), curses.A_DIM)
             except curses.error:
@@ -182,6 +194,14 @@ def _stats_lines(store: Store, days: int = 14) -> list[str]:
                 f"  {project.days_active} dias"
             )
     return lines
+
+
+def _note_lines(workspace: Workspace) -> list[str]:
+    """The note of a workspace, ready to draw above the entries."""
+    lines = [line for line in workspace.note.splitlines() if line.strip()]
+    if not lines:
+        return []
+    return [f" {line}" for line in lines] + [""]
 
 
 def _history_lines(store: Store, workspace: Workspace) -> list[str]:
@@ -252,6 +272,12 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
     view = "tasks"
 
     while True:
+        # The workspace is refreshed every turn: the note and the title can
+        # change while it is open.
+        fresh = store.workspace(workspace.id)
+        if fresh is not None:
+            workspace = fresh
+
         rows = _flatten(store, workspace)
         if selection >= len(rows):
             selection = max(len(rows) - 1, 0)
