@@ -184,6 +184,10 @@ python3 -m unittest discover -s tests
 
 ## Roadmap
 
+- **Actualizaciones**: qué pasa cuando la app cambia de versión y el
+  usuario ya tiene su base con datos (migración, copia de seguridad,
+  `protas doctor`). Está documentado en
+  [`odd/tasks/protas-updates.md`](odd/tasks/protas-updates.md).
 - Panel de Omarchy: widget en la barra con las pendientes del día y un
   panel para marcarlas, leyendo la misma base de datos.
 - Resultados de búsqueda dentro de la TUI, navegables.
