@@ -48,6 +48,7 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `n` | editar la nota del espacio de trabajo |
 | `x` | borrar la entrada |
 | `enter` | abrir el proyecto de una mención |
+| `h` | ver la historia del proyecto |
 | `esc` | volver del proyecto al día |
 | `←` / `→` | moverse entre días |
 | `q` | salir |
@@ -65,8 +66,36 @@ protas promote 6                # la tarea pasa a ser un proyecto
 protas mention 3 --date 2026-11-12
 protas roll --to 2026-11-12
 protas projects
+protas history 3               # la historia del proyecto
 protas export --out ./protas-export
 ```
+
+### Historial
+
+Cada proyecto lleva su propia historia: cuándo se creó, qué se le agregó,
+qué se completó y en qué día. La fecha de cada evento es **el día desde el
+que estabas trabajando**, no la hora del reloj: si abriste el proyecto desde
+la agenda del 12, lo que hagas cuenta como del 12.
+
+```
+$ protas history 2
+Migrar la base de datos
+=======================
+
+2026-11-09
+  en la agenda
+  creado el proyecto
+  agregada "Diseno del esquema"
+
+2026-11-10
+  en la agenda
+  agregada "Script de migracion"
+  completada "Diseno del esquema"
+
+del 2026-11-09 al 2026-11-10 (2 dia(s) con actividad)
+```
+
+En la TUI, la tecla `h` muestra la historia del proyecto abierto.
 
 ### Búsqueda
 
@@ -124,7 +153,6 @@ python3 -m unittest discover -s tests
 - Panel de Omarchy: widget en la barra con las pendientes del día y un
   panel para marcarlas, leyendo la misma base de datos.
 - Resultados de búsqueda dentro de la TUI, navegables.
-- Historial de un proyecto: qué se hizo en cada día.
 - Tareas recurrentes, prioridades y estimación de tiempo.
 - Estadísticas: horas de foco, tareas completadas por día, proyectos vivos.
 - Exportación a Markdown (ya disponible) y a Obsidian.

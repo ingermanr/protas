@@ -100,6 +100,46 @@ class ProjectRef:
     days: list[str]
 
 
+@dataclass
+class HistoryEntry:
+    """One line of the story of a project."""
+
+    date: str
+    kind: str
+    text: str
+    at: str
+
+
+@dataclass
+class ProjectHistory:
+    """The story of a project, day by day."""
+
+    project: Workspace
+    entries: list[HistoryEntry]
+    first_day: Optional[str]
+    last_day: Optional[str]
+    days: list[str]
+
+
+def describe_event(entry: HistoryEntry) -> str:
+    """One line of the story of a project."""
+    if entry.kind == "created":
+        return "creado el proyecto"
+    if entry.kind == "task_added":
+        return f'agregada "{entry.text}"'
+    if entry.kind == "task_done":
+        return f'completada "{entry.text}"'
+    if entry.kind == "task_undone":
+        return f'reabierta "{entry.text}"'
+    if entry.kind == "project_completed":
+        return "proyecto completado"
+    if entry.kind == "project_reopened":
+        return "proyecto reabierto"
+    if entry.kind == "mentioned":
+        return entry.text
+    return entry.kind
+
+
 class Store:
     """All persistence for workspaces, tasks and projects."""
 
@@ -220,6 +260,7 @@ class Store:
         text: str,
         workspace_id: int,
         parent_id: int | None = None,
+        day_id: int | None = None,
     ) -> Task:
         """Create a task inside a workspace."""
         text = text.strip()
@@ -243,8 +284,11 @@ class Store:
                VALUES (?, NULL, ?, ?, 0, NULL, NULL, ?, ?)""",
             (workspace_id, parent_id, text, position, _now()),
         )
+        new_id = cursor.lastrowid
+        if workspace.is_project:
+            self.record_event(workspace_id, "task_added", text=text, day_id=day_id, task_id=new_id)
         self.conn.commit()
-        return self.task(cursor.lastrowid)
+        return self.task(new_id)
 
     def _next_position(self, workspace_id: int, parent_id: int | None) -> int:
         if parent_id is None:
@@ -322,7 +366,7 @@ class Store:
         state = self.project_state(project_id)
         return state["total"] > 0 and state["open"] == 0
 
-    def set_done(self, task_id: int, done: bool = True) -> Task:
+    def set_done(self, task_id: int, done: bool = True, day_id: int | None = None) -> Task:
         """Complete or reopen an entry.
 
         Completing a project entry completes the whole project. Completing
@@ -334,6 +378,11 @@ class Store:
 
         if task.project_id is not None:
             self._set_project_done(task.project_id, done)
+            self.record_event(
+                task.project_id,
+                "project_completed" if done else "project_reopened",
+                day_id=day_id if day_id is not None else task.workspace_id,
+            )
             self.conn.commit()
             return self.task(task_id)
 
@@ -344,6 +393,16 @@ class Store:
         else:
             for ancestor in self._ancestors(task_id):
                 self._write_done(ancestor, False)
+
+        workspace = self.workspace(task.workspace_id)
+        if workspace is not None and workspace.is_project:
+            self.record_event(
+                workspace.id,
+                "task_done" if done else "task_undone",
+                text=task.text,
+                day_id=day_id,
+                task_id=task_id,
+            )
 
         self.conn.commit()
         return self.task(task_id)
@@ -415,7 +474,7 @@ class Store:
     # ------------------------------------------------------------------
     # projects
     # ------------------------------------------------------------------
-    def promote(self, task_id: int) -> Workspace:
+    def promote(self, task_id: int, day_id: int | None = None) -> Workspace:
         """Turn a task into a project workspace.
 
         The task becomes a mention of the project, keeping its place in the
@@ -443,6 +502,13 @@ class Store:
 
         self.conn.execute(
             "UPDATE tasks SET project_id = ? WHERE id = ?", (project.id, task_id)
+        )
+        self.record_event(
+            project.id,
+            "created",
+            text=task.text,
+            day_id=day_id if day_id is not None else task.workspace_id,
+            task_id=task_id,
         )
         self.conn.commit()
         return project
@@ -603,6 +669,92 @@ class Store:
             (row["id"], workspace_id, _now()),
         )
         return cursor.lastrowid
+
+    # ------------------------------------------------------------------
+    # history
+    # ------------------------------------------------------------------
+    def context_day(self, workspace_id: int) -> int:
+        """The day the user is working from, inferred from a workspace.
+
+        A day is its own context. A project is worked from the last day it
+        was on the agenda, and today when it was never scheduled.
+        """
+        workspace = self.workspace(workspace_id)
+        if workspace is None:
+            return self.ensure_day(today()).id
+        if workspace.is_day:
+            return workspace.id
+
+        row = self.conn.execute(
+            """SELECT w.id FROM tasks t JOIN workspaces w ON w.id = t.workspace_id
+               WHERE t.project_id = ? AND w.kind = 'day' AND w.date <= ?
+               ORDER BY w.date DESC LIMIT 1""",
+            (workspace_id, today()),
+        ).fetchone()
+        if row is not None:
+            return row["id"]
+        return self.ensure_day(today()).id
+
+    def record_event(
+        self,
+        workspace_id: int,
+        kind: str,
+        text: str = "",
+        day_id: int | None = None,
+        task_id: int | None = None,
+    ) -> None:
+        """Append a line to the story of a workspace.
+
+        The day of the event is the day the user was working from, which
+        is not always the day the event happened on.
+        """
+        if day_id is None:
+            day_id = self.context_day(workspace_id)
+        day = self.workspace(day_id)
+        date = day.date if day is not None and day.date else today()
+
+        self.conn.execute(
+            """INSERT INTO events (workspace_id, date, task_id, kind, text, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (workspace_id, date, task_id, kind, text, _now()),
+        )
+
+    def history(self, project_id: int) -> ProjectHistory:
+        """The story of a project, day by day."""
+        project = self.workspace(project_id)
+        if project is None:
+            raise ValueError(f"project {project_id} does not exist")
+
+        entries: list[HistoryEntry] = []
+
+        for row in self.conn.execute(
+            """SELECT * FROM events WHERE workspace_id = ? ORDER BY created_at, id""",
+            (project_id,),
+        ).fetchall():
+            entries.append(
+                HistoryEntry(row["date"], row["kind"], row["text"], row["created_at"])
+            )
+
+        # The days the project was on the agenda come from the mentions.
+        for row in self.conn.execute(
+            """SELECT DISTINCT w.date AS date, MIN(t.created_at) AS at
+               FROM tasks t JOIN workspaces w ON w.id = t.workspace_id
+               WHERE t.project_id = ? AND w.kind = 'day'
+               GROUP BY w.date ORDER BY w.date""",
+            (project_id,),
+        ).fetchall():
+            entries.append(HistoryEntry(row["date"], "mentioned", "en la agenda", row["at"]))
+
+        entries.sort(key=lambda entry: (entry.date, entry.at, entry.kind))
+
+        days = sorted({entry.date for entry in entries})
+        return ProjectHistory(
+            project=project,
+            entries=entries,
+            first_day=days[0] if days else None,
+            last_day=days[-1] if days else None,
+            days=days,
+        )
 
     # ------------------------------------------------------------------
     # search

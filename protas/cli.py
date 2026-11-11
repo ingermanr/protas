@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import text
-from .store import Store, Task, Workspace, today
+from .store import Store, Task, Workspace, describe_event, today
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,6 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
     mention.add_argument("--date", default=None)
 
     sub.add_parser("projects", help="list every project")
+
+    history = sub.add_parser("history", help="show the story of a project")
+    history.add_argument("id", type=int, help="id of the project")
+    history.add_argument("--json", action="store_true", help="machine readable output")
 
     export = sub.add_parser("export", help="export every day and project as markdown")
     export.add_argument("--out", default=None, help="output directory (default: ./protas-export)")
@@ -261,6 +265,56 @@ def cmd_projects(store: Store, args) -> int:
     return 0
 
 
+def cmd_history(store: Store, args) -> int:
+    history = store.history(args.id)
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "project": history.project.title,
+                    "first_day": history.first_day,
+                    "last_day": history.last_day,
+                    "days": history.days,
+                    "entries": [
+                        {
+                            "date": entry.date,
+                            "kind": entry.kind,
+                            "text": entry.text,
+                            "at": entry.at,
+                        }
+                        for entry in history.entries
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    print(history.project.title)
+    print("=" * max(len(history.project.title), 12))
+
+    current = None
+    for entry in history.entries:
+        if entry.date != current:
+            current = entry.date
+            print()
+            print(current)
+        print(f"  {describe_event(entry)}")
+
+    if history.first_day:
+        print()
+        print(
+            f"del {history.first_day} al {history.last_day} "
+            f"({len(history.days)} dia(s) con actividad)"
+        )
+    else:
+        print()
+        print("todavia no hay actividad")
+    return 0
+
+
 def cmd_export(store: Store, args) -> int:
     out_dir = Path(args.out or "protas-export")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -364,6 +418,7 @@ COMMANDS = {
     "promote": cmd_promote,
     "mention": cmd_mention,
     "projects": cmd_projects,
+    "history": cmd_history,
     "export": cmd_export,
     "search": cmd_search,
 }

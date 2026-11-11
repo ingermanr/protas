@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Story of a project. The date is kept as text so the story survives even
+-- if the day it belongs to is deleted.
+CREATE TABLE IF NOT EXISTS events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    date         TEXT NOT NULL,
+    task_id      INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    kind         TEXT NOT NULL,
+    text         TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_workspace ON events(workspace_id, created_at);
 """
 
 # The search index is optional: some SQLite builds ship without FTS5 and

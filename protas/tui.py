@@ -13,7 +13,7 @@ from datetime import date as Date
 from datetime import timedelta
 from typing import Optional
 
-from .store import Store, Task, Workspace, today
+from .store import Store, Task, Workspace, describe_event, today
 
 HELP = (
     "j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
@@ -75,6 +75,7 @@ def _draw(
     selection: int,
     message: str,
     editor: Optional[Editor],
+    view: str = "tasks",
 ) -> None:
     stdscr.erase()
     height, width = stdscr.getmaxyx()
@@ -101,7 +102,13 @@ def _draw(
     body_bottom = height - 3
     visible = max(body_bottom - body_top, 0)
 
-    if visible:
+    if visible and view == "history":
+        for index, line in enumerate(_history_lines(store, workspace)[:visible]):
+            try:
+                stdscr.addstr(body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width))
+            except curses.error:
+                pass
+    elif visible:
         offset = 0
         if selection >= visible:
             offset = selection - visible + 1
@@ -143,6 +150,30 @@ def _draw(
     stdscr.refresh()
 
 
+def _history_lines(store: Store, workspace: Workspace) -> list[str]:
+    """The story of a project, ready to draw."""
+    if not workspace.is_project:
+        return [" (esto no es un proyecto)"]
+
+    history = store.history(workspace.id)
+    lines: list[str] = []
+    current = None
+    for entry in history.entries:
+        if entry.date != current:
+            current = entry.date
+            lines.append("")
+            lines.append(f" {entry.date}")
+        lines.append(f"   {describe_event(entry)}")
+
+    if history.first_day:
+        lines.append("")
+        lines.append(f" del {history.first_day} al {history.last_day}")
+    else:
+        lines.append("")
+        lines.append(" todavia no hay actividad")
+    return lines
+
+
 def _editor_key(ch: int, editor: Editor) -> str:
     """Feed a key to the editor. Returns submit, save, cancel or continue."""
     if ch == 27:
@@ -173,6 +204,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
     stdscr.keypad(True)
 
     origin_day = store.open_day(date_str)
+    current_day = origin_day
     if project_id:
         workspace = store.workspace(project_id)
         if workspace is None:
@@ -183,6 +215,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
     selection = 0
     message = ""
     editor: Optional[Editor] = None
+    view = "tasks"
 
     while True:
         rows = _flatten(store, workspace)
@@ -191,7 +224,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
         if selection < 0:
             selection = 0
 
-        _draw(stdscr, store, workspace, rows, selection, message, editor)
+        _draw(stdscr, store, workspace, rows, selection, message, editor, view)
         ch = stdscr.getch()
 
         if editor is not None:
@@ -210,7 +243,10 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                     else:
                         target_workspace = editor.workspace_id or workspace.id
                         task = store.add_task(
-                            editor.text(), target_workspace, editor.parent_id
+                            editor.text(),
+                            target_workspace,
+                            editor.parent_id,
+                            day_id=current_day.id,
                         )
                         if target_workspace == workspace.id:
                             rows = _flatten(store, workspace)
@@ -247,7 +283,9 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                     selection = 0
                     message = ""
                 else:
-                    store.set_done(task.id, not store.is_done(task))
+                    store.set_done(
+                        task.id, not store.is_done(task), day_id=current_day.id
+                    )
         elif ch == ord("a"):
             editor = Editor("Nueva tarea: ", "task")
         elif ch == ord("A"):
@@ -258,7 +296,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                         "Nueva tarea en el proyecto: ", "task", workspace_id=task.project_id
                     )
                 else:
-                    project = store.promote(task.id)
+                    project = store.promote(task.id, day_id=current_day.id)
                     editor = Editor(
                         f"Nueva subtarea de {project.title}: ", "task", workspace_id=project.id
                     )
@@ -271,7 +309,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 if task.is_mention:
                     message = "esa entrada ya es un proyecto"
                 else:
-                    project = store.promote(task.id)
+                    project = store.promote(task.id, day_id=current_day.id)
                     message = f"proyecto {project.id}: {project.title}"
             else:
                 message = "no hay ninguna entrada que promover"
@@ -294,27 +332,40 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
             else:
                 message = "no hay ninguna entrada que borrar"
         elif ch == ord("r"):
-            store.open_day(workspace.date if workspace.is_day else today())
+            store.open_day(current_day.date)
             message = "espacio actualizado"
+        elif ch == ord("h"):
+            if view == "history":
+                view = "tasks"
+            elif workspace.is_project:
+                view = "history"
+            else:
+                message = "el historial es de los proyectos"
         elif ch == 27:
             # Escape goes back to the day when a project is open.
-            if workspace.is_project:
-                workspace = origin_day
+            if view == "history":
+                view = "tasks"
+            elif workspace.is_project:
+                workspace = current_day
                 selection = 0
                 message = ""
-        elif ch in (curses.KEY_LEFT, ord("h")):
+        elif ch == curses.KEY_LEFT:
             if workspace.is_project:
-                workspace = origin_day
+                workspace = current_day
                 selection = 0
             else:
-                workspace = store.open_day(_shift_date(workspace.date, -1))
+                current_day = store.open_day(_shift_date(current_day.date, -1))
+                workspace = current_day
                 selection = 0
-        elif ch in (curses.KEY_RIGHT, ord("l")):
+                view = "tasks"
+        elif ch == curses.KEY_RIGHT:
             if workspace.is_project:
                 pass
             else:
-                workspace = store.open_day(_shift_date(workspace.date, 1))
+                current_day = store.open_day(_shift_date(current_day.date, 1))
+                workspace = current_day
                 selection = 0
+                view = "tasks"
 
 
 def _ensure_utf8_locale() -> None:
