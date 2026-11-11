@@ -1,0 +1,130 @@
+# protas
+
+Notas y tareas del día, con un espacio de trabajo por día.
+
+Cada día es un **espacio de trabajo** cuyo nombre es la fecha (`YYYY-MM-DD`).
+Dentro hay una nota libre y una lista de entradas. Lo que no se completó se
+arrastra al día siguiente de forma automática, y cualquier tarea puede
+convertirse en un **proyecto**: un espacio de trabajo propio, con su título,
+su nota y sus tareas.
+
+## Instalación
+
+Sin dependencias externas: solo Python 3.11 o superior.
+
+```bash
+# usar el modulo directamente
+python3 -m protas
+
+# o instalarlo como comando
+pip install -e .
+protas
+```
+
+La base de datos vive en `~/.local/share/protas/protas.db`. Se puede cambiar
+con la variable `PROTAS_DB` o con la opción `--db`.
+
+## Uso diario
+
+```bash
+protas              # abre el espacio de trabajo de hoy en la TUI
+protas show         # imprime el espacio de trabajo de hoy
+protas show 2026-11-10
+protas show --project 3
+```
+
+Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
+
+### Teclas de la TUI
+
+| Tecla | Acción |
+| --- | --- |
+| `j` / `k` | mover la selección |
+| `espacio` | completar o reabrir la entrada |
+| `a` | nueva tarea |
+| `A` | nueva subtarea (promueve la tarea a proyecto si hace falta) |
+| `p` | promover la tarea a proyecto |
+| `e` | editar el texto |
+| `n` | editar la nota del espacio de trabajo |
+| `x` | borrar la entrada |
+| `enter` | abrir el proyecto de una mención |
+| `esc` | volver del proyecto al día |
+| `←` / `→` | moverse entre días |
+| `q` | salir |
+
+### Comandos
+
+```bash
+protas add "Preparar la reunion" --date 2026-11-11
+protas add "Esquema de la tabla" --project 3
+protas list --date 2026-11-11
+protas done 6
+protas undone 6
+protas note "Resumen de la sesion" --date 2026-11-11
+protas promote 6                # la tarea pasa a ser un proyecto
+protas mention 3 --date 2026-11-12
+protas roll --to 2026-11-12
+protas projects
+protas export --out ./protas-export
+```
+
+### Búsqueda
+
+`protas search` busca en tareas, notas y espacios de trabajo al mismo tiempo.
+
+```bash
+protas search migrar                  # tareas, notas, días y proyectos
+protas search base de datos           # los términos se combinan con AND
+protas search 'migr*'                 # prefijo: migr* encuentra "migración"
+protas search reunion --kind task     # solo tareas, notas, días o proyectos
+protas search equipo --since 2026-11-01 --until 2026-11-30
+protas search informe --open          # solo tareas pendientes
+protas search migrar --json           # salida para scripts
+```
+
+La búsqueda ignora mayúsculas y tildes (`session` encuentra `Sesión`), y
+sale con código 1 cuando no encuentra nada, como `grep`.
+
+La búsqueda usa un índice FTS5 que SQLite mantiene sincronizado con las
+tablas mediante triggers. Las bases creadas antes del índice se actualizan
+solas la primera vez que se abren. Si el SQLite del sistema no trae FTS5,
+la búsqueda sigue funcionando con un escaneo simple, solo que más lento.
+
+## Modelo de datos
+
+- **Workspace**: la unidad en la que se trabaja. Hay dos tipos:
+  - **día**: un día calendario. Su título es la fecha y su `date` es única.
+  - **proyecto**: un espacio con vida propia, con título, nota y tareas.
+- **Entrada**: una tarea dentro de un workspace. En un día es trabajo para
+  ese día; en un proyecto es parte del proyecto.
+- **Mención**: una entrada de un día que apunta a un proyecto. Conserva su
+  lugar en la agenda y muestra el progreso vivo del proyecto.
+- **Promover**: convertir una tarea en proyecto crea su workspace, muda sus
+  hijas adentro y deja la tarea original como mención.
+- **Estado vivo**: un proyecto tiene un único estado. Si todas sus tareas
+  están hechas, el proyecto está hecho y todas sus menciones aparecen
+  hechas. Reabrir una tarea del proyecto reabre el proyecto.
+- **Arrastre**: lo pendiente se **copia** al día siguiente y la entrada
+  original se queda donde estaba, así cada día conserva un registro honesto
+  de lo que realmente pasó. Un registro de arrastes evita duplicados, y las
+  subtareas de un proyecto no se duplican: el día arrastra la mención.
+
+Completar un proyecto completa también sus tareas. Completar una tarea
+completa sus hijas. El proyecto tiene su propia nota (el brief) y puede
+anidarse dentro de otro proyecto.
+
+## Pruebas
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+## Roadmap
+
+- Panel de Omarchy: widget en la barra con las pendientes del día y un
+  panel para marcarlas, leyendo la misma base de datos.
+- Resultados de búsqueda dentro de la TUI, navegables.
+- Historial de un proyecto: qué se hizo en cada día.
+- Tareas recurrentes, prioridades y estimación de tiempo.
+- Estadísticas: horas de foco, tareas completadas por día, proyectos vivos.
+- Exportación a Markdown (ya disponible) y a Obsidian.
