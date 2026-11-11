@@ -1,0 +1,399 @@
+"""Command line interface for protas.
+
+Every command is a thin, scriptable wrapper around the store. The
+interactive workspace lives in the TUI (``protas`` with no arguments).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from . import text
+from .store import Store, Task, Workspace, today
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="protas",
+        description=(
+            "Daily notes and tasks: one workspace per day, projects are workspaces too, "
+            "pending work rolls forward."
+        ),
+    )
+    parser.add_argument("--db", default=None, help="path to the database file")
+    sub = parser.add_subparsers(dest="command")
+
+    tui = sub.add_parser("tui", help="open the interactive workspace")
+    tui.add_argument("date", nargs="?", help="day to open (default: today)")
+    tui.add_argument("--project", type=int, default=None, help="project to open")
+
+    show = sub.add_parser("show", help="print a workspace")
+    show.add_argument("date", nargs="?", help="day to show (default: today)")
+    show.add_argument("--project", type=int, default=None, help="project to show")
+
+    listing = sub.add_parser("list", help="list the entries of a workspace")
+    listing.add_argument("--date", default=None)
+    listing.add_argument("--project", type=int, default=None)
+    listing.add_argument("--all", action="store_true", help="include finished entries")
+
+    add = sub.add_parser("add", help="add a task")
+    add.add_argument("text")
+    add.add_argument("--date", default=None)
+    add.add_argument("--project", type=int, default=None, help="add the task inside a project")
+    add.add_argument("--parent", type=int, default=None, help="id of the parent task")
+
+    done = sub.add_parser("done", help="mark an entry as completed")
+    done.add_argument("id", type=int)
+
+    undone = sub.add_parser("undone", help="reopen an entry")
+    undone.add_argument("id", type=int)
+
+    remove = sub.add_parser("rm", help="delete an entry")
+    remove.add_argument("id", type=int)
+
+    note = sub.add_parser("note", help="read or write the note of a workspace")
+    note.add_argument("text", nargs="?")
+    note.add_argument("--date", default=None)
+    note.add_argument("--project", type=int, default=None)
+
+    roll = sub.add_parser("roll", help="carry pending work into a day")
+    roll.add_argument("--to", default=None)
+
+    promote = sub.add_parser("promote", help="turn a task into a project")
+    promote.add_argument("id", type=int)
+
+    mention = sub.add_parser("mention", help="add a project to the agenda of a day")
+    mention.add_argument("project", type=int)
+    mention.add_argument("--date", default=None)
+
+    sub.add_parser("projects", help="list every project")
+
+    export = sub.add_parser("export", help="export every day and project as markdown")
+    export.add_argument("--out", default=None, help="output directory (default: ./protas-export)")
+
+    search = sub.add_parser("search", help="search tasks, notes and workspaces")
+    search.add_argument(
+        "term",
+        nargs="*",
+        help="text to look for (use * for prefixes, quote it or type it loose)",
+    )
+    search.add_argument("--since", default=None, help="only results on or after this day")
+    search.add_argument("--until", default=None, help="only results on or before this day")
+    search.add_argument(
+        "--kind",
+        action="append",
+        choices=["task", "note", "day", "project"],
+        help="what to search, repeatable (default: all of them)",
+    )
+    search.add_argument("--open", dest="open_only", action="store_true", help="only pending tasks")
+    search.add_argument("--done", action="store_true", help="only completed tasks")
+    search.add_argument("--limit", type=int, default=50, help="0 for no limit")
+    search.add_argument("--json", action="store_true", help="machine readable output")
+
+    return parser
+
+
+# ----------------------------------------------------------------------
+# rendering
+# ----------------------------------------------------------------------
+def render_workspace(store: Store, workspace: Workspace) -> str:
+    """Render a workspace as plain text."""
+    lines = [workspace.title, "=" * max(len(workspace.title), 12)]
+
+    if workspace.note.strip():
+        lines.append("")
+        lines.extend(workspace.note.strip().splitlines())
+        lines.append("")
+
+    tasks = store.tasks_of(workspace.id)
+    if tasks:
+        lines.append("")
+        for task in tasks:
+            lines.extend(render_entry(store, task, 0))
+    else:
+        lines.extend(["", "(no tasks yet)"])
+
+    if workspace.is_project:
+        mentions = [
+            row["date"]
+            for row in store.conn.execute(
+                """SELECT DISTINCT w.date FROM tasks t
+                   JOIN workspaces w ON w.id = t.workspace_id
+                   WHERE t.project_id = ? AND w.kind = 'day' ORDER BY w.date""",
+                (workspace.id,),
+            ).fetchall()
+        ]
+        if mentions:
+            lines.extend(["", "mencionado en: " + ", ".join(mentions)])
+
+    return "\n".join(lines)
+
+
+def render_entry(store: Store, task: Task, depth: int) -> list[str]:
+    """Render an entry and its children."""
+    marker = "[x]" if store.is_done(task) else "[ ]"
+    indent = "    " * depth
+    line = f"{indent}{marker} {store.title_of(task)}"
+
+    if task.is_mention:
+        state = store.project_state(task.project_id)
+        if state["total"]:
+            line += f"  (proyecto {state['done']}/{state['total']})"
+        else:
+            line += "  (proyecto)"
+
+    lines = [line]
+    for child in task.children:
+        lines.extend(render_entry(store, child, depth + 1))
+    return lines
+
+
+# ----------------------------------------------------------------------
+# commands
+# ----------------------------------------------------------------------
+def _workspace_for(store: Store, args) -> Workspace:
+    """Resolve the workspace a command works on."""
+    if getattr(args, "project", None):
+        workspace = store.workspace(args.project)
+        if workspace is None:
+            raise ValueError(f"project {args.project} does not exist")
+        return workspace
+    date_str = getattr(args, "date", None) or today()
+    return store.open_day(date_str)
+
+
+def cmd_show(store: Store, args) -> int:
+    workspace = _workspace_for(store, args)
+    print(render_workspace(store, workspace))
+    return 0
+
+
+def cmd_list(store: Store, args) -> int:
+    workspace = _workspace_for(store, args)
+    for node, depth in walk(store.tasks_of(workspace.id, include_done=args.all)):
+        marker = "[x]" if store.is_done(node) else "[ ]"
+        print(f"{node.id} {marker} {'  ' * depth}{store.title_of(node)}")
+    return 0
+
+
+def walk(tasks: list[Task], depth: int = 0):
+    """Yield every task of a tree with its depth."""
+    for task in tasks:
+        yield task, depth
+        yield from walk(task.children, depth + 1)
+
+
+def cmd_add(store: Store, args) -> int:
+    if args.project:
+        workspace = store.workspace(args.project)
+        if workspace is None:
+            raise ValueError(f"project {args.project} does not exist")
+    else:
+        workspace = store.open_day(args.date)
+    task = store.add_task(args.text, workspace.id, parent_id=args.parent)
+    print(task.id)
+    return 0
+
+
+def cmd_done(store: Store, args) -> int:
+    task = store.set_done(args.id, True)
+    print(task.id)
+    return 0
+
+
+def cmd_undone(store: Store, args) -> int:
+    task = store.set_done(args.id, False)
+    print(task.id)
+    return 0
+
+
+def cmd_rm(store: Store, args) -> int:
+    store.delete_task(args.id)
+    return 0
+
+
+def cmd_note(store: Store, args) -> int:
+    workspace = _workspace_for(store, args)
+    if args.text is None:
+        print(store.note(workspace.id))
+        return 0
+    store.set_note(workspace.id, args.text)
+    return 0
+
+
+def cmd_roll(store: Store, args) -> int:
+    target = args.to or today()
+    carried = store.rollover(target)
+    if not carried:
+        print(f"nothing pending to carry into {target}")
+        return 0
+    for entry_id in carried:
+        entry = store.task(entry_id)
+        print(f"{entry.id} {store.title_of(entry)}")
+    return 0
+
+
+def cmd_promote(store: Store, args) -> int:
+    project = store.promote(args.id)
+    print(project.id)
+    return 0
+
+
+def cmd_mention(store: Store, args) -> int:
+    day = store.open_day(args.date)
+    entry = store.add_mention(args.project, day.id)
+    print(entry.id)
+    return 0
+
+
+def cmd_projects(store: Store, args) -> int:
+    projects = store.projects()
+    if not projects:
+        print("no projects yet")
+        return 0
+    for project in projects:
+        state = f"{project.done}/{project.total}"
+        days = f"  [{', '.join(project.days)}]" if project.days else ""
+        print(f"{project.workspace.id}  {project.workspace.title}  ({state}){days}")
+    return 0
+
+
+def cmd_export(store: Store, args) -> int:
+    out_dir = Path(args.out or "protas-export")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for workspace in store.workspaces("day"):
+        lines = [f"# {workspace.title}", ""]
+        if workspace.note.strip():
+            lines.extend([workspace.note.strip(), ""])
+        for task in store.tasks_of(workspace.id):
+            lines.extend(_render_markdown(store, task, 0))
+        (out_dir / f"{workspace.date}.md").write_text("\n".join(lines) + "\n")
+
+    projects_dir = out_dir / "projects"
+    projects_dir.mkdir(exist_ok=True)
+    for project in store.projects():
+        workspace = project.workspace
+        lines = [f"# {workspace.title}", "", f"project {project.done}/{project.total}", ""]
+        if workspace.note.strip():
+            lines.extend([workspace.note.strip(), ""])
+        for task in store.tasks_of(workspace.id):
+            lines.extend(_render_markdown(store, task, 0))
+        (projects_dir / f"{workspace.id}-{_slug(workspace.title)}.md").write_text(
+            "\n".join(lines) + "\n"
+        )
+
+    print(out_dir)
+    return 0
+
+
+def _slug(title: str) -> str:
+    cleaned = "".join(char if char.isalnum() or char in "-_" else "-" for char in title)
+    return "-".join(part for part in cleaned.split("-") if part) or "proyecto"
+
+
+def _render_markdown(store: Store, task: Task, depth: int) -> list[str]:
+    indent = "  " * depth
+    marker = "x" if store.is_done(task) else " "
+    title = store.title_of(task)
+    if task.is_mention:
+        state = store.project_state(task.project_id)
+        title += f" (proyecto {state['done']}/{state['total']})" if state["total"] else " (proyecto)"
+    lines = [f"{indent}- [{marker}] {title}"]
+    for child in task.children:
+        lines.extend(_render_markdown(store, child, depth + 1))
+    return lines
+
+
+def cmd_search(store: Store, args) -> int:
+    query = " ".join(args.term).strip()
+    if not query:
+        print("protas: decime qué buscar", file=sys.stderr)
+        return 2
+
+    kinds = tuple(args.kind) if args.kind else ("task", "note", "day", "project")
+    state = "open" if args.open_only else ("done" if args.done else None)
+
+    hits = store.search(
+        query,
+        since=args.since,
+        until=args.until,
+        kinds=kinds,
+        state=state,
+        limit=args.limit,
+    )
+
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "kind": hit.kind,
+                        "date": hit.date,
+                        "text": hit.text,
+                        "task_id": hit.task_id,
+                    }
+                    for hit in hits
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        terms = text.terms(query)
+        for hit in hits:
+            body = hit.text if hit.kind == "task" else text.snippet(hit.text, terms)
+            print(f"{hit.date}  {hit.kind:<7} {body}")
+        print(f"{len(hits)} resultado(s)", file=sys.stderr)
+
+    return 0 if hits else 1
+
+
+COMMANDS = {
+    "show": cmd_show,
+    "list": cmd_list,
+    "add": cmd_add,
+    "done": cmd_done,
+    "undone": cmd_undone,
+    "rm": cmd_rm,
+    "note": cmd_note,
+    "roll": cmd_roll,
+    "promote": cmd_promote,
+    "mention": cmd_mention,
+    "projects": cmd_projects,
+    "export": cmd_export,
+    "search": cmd_search,
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    store = Store(path=args.db)
+
+    try:
+        if args.command == "tui":
+            from .tui import run_tui
+
+            run_tui(store, args.date, args.project)
+            return 0
+        if args.command is None:
+            from .tui import run_tui
+
+            run_tui(store, None, None)
+            return 0
+
+        handler = COMMANDS.get(args.command)
+        if handler is None:
+            parser.print_help()
+            return 2
+        return handler(store, args)
+    except ValueError as error:
+        print(f"protas: {error}", file=sys.stderr)
+        return 1
+    finally:
+        store.close()

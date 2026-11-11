@@ -1,0 +1,341 @@
+"""Interactive workspace (curses).
+
+The TUI is the daily driver: one screen with the entries of a workspace,
+the free form note of that workspace and a handful of keys. A day holds
+tasks and mentions of projects; a project holds its own tasks. It never
+leaves the terminal, so it stays fast on any machine.
+"""
+
+from __future__ import annotations
+
+import curses
+from datetime import date as Date
+from datetime import timedelta
+from typing import Optional
+
+from .store import Store, Task, Workspace, today
+
+HELP = (
+    "j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
+    "e editar | n nota | x borrar | enter abrir | esc volver | < > dia | q salir"
+)
+
+
+class Editor:
+    """A one line editor used for tasks and a line editor used for notes."""
+
+    def __init__(
+        self,
+        prompt: str,
+        kind: str,
+        target_id: int | None = None,
+        parent_id: int | None = None,
+        workspace_id: int | None = None,
+    ):
+        self.prompt = prompt
+        self.kind = kind
+        self.target_id = target_id
+        self.parent_id = parent_id
+        self.workspace_id = workspace_id
+        self.buffer = ""
+        self.lines: list[str] = []
+
+    @property
+    def is_note(self) -> bool:
+        return self.kind == "note"
+
+    def text(self) -> str:
+        if self.is_note:
+            return "\n".join(self.lines)
+        return self.buffer.strip()
+
+
+def _flatten(store: Store, workspace: Workspace) -> list[tuple[Task, int]]:
+    """Flatten the entries of a workspace into drawable rows."""
+    rows: list[tuple[Task, int]] = []
+
+    def walk(tasks: list[Task], depth: int) -> None:
+        for task in tasks:
+            rows.append((task, depth))
+            walk(task.children, depth + 1)
+
+    walk(store.tasks_of(workspace.id), 0)
+    return rows
+
+
+def _clip(text: str, width: int) -> str:
+    return text[: max(width - 1, 0)]
+
+
+def _draw(
+    stdscr,
+    store: Store,
+    workspace: Workspace,
+    rows,
+    selection: int,
+    message: str,
+    editor: Optional[Editor],
+) -> None:
+    stdscr.erase()
+    height, width = stdscr.getmaxyx()
+
+    counts = store.counts(workspace.id)
+
+    header = f" protas - {workspace.title} "
+    if workspace.kind == "project":
+        header += "(proyecto) "
+    if workspace.note.strip():
+        header += "- notas"
+    stdscr.addstr(0, 0, _clip(header.ljust(max(width - 1, 0)), width), curses.A_BOLD)
+
+    stats = (
+        f" {counts['open']} pendientes | {counts['done']} hechas"
+        f" | {counts['projects']} proyectos"
+    )
+    stdscr.addstr(1, 0, _clip(stats, width))
+
+    if height > 3:
+        stdscr.hline(2, 0, "-", max(width - 1, 0))
+
+    body_top = 3
+    body_bottom = height - 3
+    visible = max(body_bottom - body_top, 0)
+
+    if visible:
+        offset = 0
+        if selection >= visible:
+            offset = selection - visible + 1
+        for index, (task, depth) in enumerate(rows[offset : offset + visible]):
+            marker = "x" if store.is_done(task) else " "
+            label = store.title_of(task)
+            if task.is_mention:
+                state = store.project_state(task.project_id)
+                label += f"  (proyecto {state['done']}/{state['total']})" if state["total"] else "  (proyecto)"
+            line = f" {'    ' * depth}[{marker}] {label}"
+            attribute = curses.A_DIM if store.is_done(task) else curses.A_NORMAL
+            if index + offset == selection:
+                attribute |= curses.A_REVERSE
+            try:
+                stdscr.addstr(
+                    body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width), attribute
+                )
+            except curses.error:
+                pass
+        if not rows:
+            try:
+                stdscr.addstr(body_top, 0, _clip(" (sin tareas todavia) ", width), curses.A_DIM)
+            except curses.error:
+                pass
+
+    footer = message or HELP
+    if height > 1:
+        try:
+            stdscr.addstr(height - 2, 0, _clip(footer.ljust(max(width - 1, 0)), width), curses.A_DIM)
+        except curses.error:
+            pass
+
+    if editor is not None and height > 0:
+        try:
+            stdscr.addstr(height - 1, 0, _clip(editor.prompt + editor.buffer, width), curses.A_BOLD)
+        except curses.error:
+            pass
+
+    stdscr.refresh()
+
+
+def _editor_key(ch: int, editor: Editor) -> str:
+    """Feed a key to the editor. Returns submit, save, cancel or continue."""
+    if ch == 27:
+        return "cancel"
+    if ch == 19:  # Ctrl-S
+        return "save"
+    if ch in (curses.KEY_BACKSPACE, 127, 8):
+        editor.buffer = editor.buffer[:-1]
+        return "continue"
+    if ch in (10, 13, curses.KEY_ENTER):
+        if editor.is_note:
+            editor.lines.append(editor.buffer)
+            editor.buffer = ""
+            return "continue"
+        return "submit"
+    if 32 <= ch < 127:
+        editor.buffer += chr(ch)
+    return "continue"
+
+
+def _shift_date(date_str: str, days: int) -> str:
+    current = Date.fromisoformat(date_str) + timedelta(days=days)
+    return current.strftime("%Y-%m-%d")
+
+
+def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> None:
+    curses.curs_set(0)
+    stdscr.keypad(True)
+
+    origin_day = store.open_day(date_str)
+    if project_id:
+        workspace = store.workspace(project_id)
+        if workspace is None:
+            workspace = origin_day
+    else:
+        workspace = origin_day
+
+    selection = 0
+    message = ""
+    editor: Optional[Editor] = None
+
+    while True:
+        rows = _flatten(store, workspace)
+        if selection >= len(rows):
+            selection = max(len(rows) - 1, 0)
+        if selection < 0:
+            selection = 0
+
+        _draw(stdscr, store, workspace, rows, selection, message, editor)
+        ch = stdscr.getch()
+
+        if editor is not None:
+            action = _editor_key(ch, editor)
+            if action == "cancel":
+                editor = None
+                message = ""
+            elif action == "submit":
+                try:
+                    if editor.kind == "delete":
+                        store.delete_task(editor.target_id)
+                        message = "entrada borrada"
+                    elif editor.kind == "edit":
+                        store.set_text(editor.target_id, editor.text())
+                        message = "tarea actualizada"
+                    else:
+                        target_workspace = editor.workspace_id or workspace.id
+                        task = store.add_task(
+                            editor.text(), target_workspace, editor.parent_id
+                        )
+                        if target_workspace == workspace.id:
+                            rows = _flatten(store, workspace)
+                            selection = next(
+                                (i for i, (t, _) in enumerate(rows) if t.id == task.id), selection
+                            )
+                except ValueError as error:
+                    message = str(error)
+                editor = None
+            elif action == "save":
+                store.set_note(workspace.id, editor.text())
+                editor = None
+                message = "nota guardada"
+            continue
+
+        if ch in (ord("q"),):
+            return
+        elif ch in (ord("j"), curses.KEY_DOWN):
+            selection = min(selection + 1, max(len(rows) - 1, 0))
+            message = ""
+        elif ch in (ord("k"), curses.KEY_UP):
+            selection = max(selection - 1, 0)
+            message = ""
+        elif ch == ord("g"):
+            selection = 0
+        elif ch == ord("G"):
+            selection = max(len(rows) - 1, 0)
+        elif ch in (ord(" "), 10, 13, curses.KEY_ENTER):
+            if rows:
+                task, _ = rows[selection]
+                if task.is_mention and ch != ord(" "):
+                    # Enter opens the project, space completes it.
+                    workspace = store.workspace(task.project_id) or workspace
+                    selection = 0
+                    message = ""
+                else:
+                    store.set_done(task.id, not store.is_done(task))
+        elif ch == ord("a"):
+            editor = Editor("Nueva tarea: ", "task")
+        elif ch == ord("A"):
+            if rows:
+                task, _ = rows[selection]
+                if task.is_mention:
+                    editor = Editor(
+                        "Nueva tarea en el proyecto: ", "task", workspace_id=task.project_id
+                    )
+                else:
+                    project = store.promote(task.id)
+                    editor = Editor(
+                        f"Nueva subtarea de {project.title}: ", "task", workspace_id=project.id
+                    )
+                    message = "la tarea ahora es un proyecto"
+            else:
+                message = "no hay ninguna entrada a la que colgarla"
+        elif ch == ord("p"):
+            if rows:
+                task, _ = rows[selection]
+                if task.is_mention:
+                    message = "esa entrada ya es un proyecto"
+                else:
+                    project = store.promote(task.id)
+                    message = f"proyecto {project.id}: {project.title}"
+            else:
+                message = "no hay ninguna entrada que promover"
+        elif ch == ord("e"):
+            if rows:
+                task, _ = rows[selection]
+                editor = Editor("Editar: ", "edit", target_id=task.id)
+                editor.buffer = store.title_of(task)
+            else:
+                message = "no hay ninguna entrada que editar"
+        elif ch == ord("n"):
+            editor = Editor("Nota (Enter = nueva linea, Ctrl-S = guardar): ", "note")
+            editor.lines = store.note(workspace.id).splitlines()
+        elif ch == ord("x"):
+            if rows:
+                task, _ = rows[selection]
+                editor = Editor(
+                    f"Borrar '{store.title_of(task)}'? (Enter si, Esc no): ", "delete", target_id=task.id
+                )
+            else:
+                message = "no hay ninguna entrada que borrar"
+        elif ch == ord("r"):
+            store.open_day(workspace.date if workspace.is_day else today())
+            message = "espacio actualizado"
+        elif ch == 27:
+            # Escape goes back to the day when a project is open.
+            if workspace.is_project:
+                workspace = origin_day
+                selection = 0
+                message = ""
+        elif ch in (curses.KEY_LEFT, ord("h")):
+            if workspace.is_project:
+                workspace = origin_day
+                selection = 0
+            else:
+                workspace = store.open_day(_shift_date(workspace.date, -1))
+                selection = 0
+        elif ch in (curses.KEY_RIGHT, ord("l")):
+            if workspace.is_project:
+                pass
+            else:
+                workspace = store.open_day(_shift_date(workspace.date, 1))
+                selection = 0
+
+
+def _ensure_utf8_locale() -> None:
+    """Curses only accepts what the locale encodes, so ask for UTF-8."""
+    import locale
+
+    try:
+        locale.setlocale(locale.LC_ALL, "")
+    except locale.Error:
+        pass
+    if "utf" in locale.getpreferredencoding(False).lower():
+        return
+    for candidate in ("C.UTF-8", "en_US.UTF-8", "es_ES.UTF-8"):
+        try:
+            locale.setlocale(locale.LC_ALL, candidate)
+            return
+        except locale.Error:
+            continue
+
+
+def run_tui(store: Store, date_str: str | None = None, project_id: int | None = None) -> None:
+    """Open the interactive workspace."""
+    _ensure_utf8_locale()
+    curses.wrapper(_run, store, date_str, project_id)
