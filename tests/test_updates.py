@@ -278,6 +278,91 @@ class NewerDatabaseTest(UpdateCase):
         self.assertEqual(self.digest(), before)
         self.assertIn("'three'", str(raised.exception))
 
+class NoticeTest(UpdateCase):
+    """One line on stderr, only when the database was changed."""
+
+    def run_cli(self, *args, db=None):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(["--db", str(db or self.db), *args])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_an_update_says_the_versions_and_where_the_copy_is(self):
+        with newer_protas({3: add_priority, 4: raise_priority}, 5):
+            code, out, err = self.run_cli("list", "--date", "2026-01-05")
+            again = self.run_cli("list", "--date", "2026-01-05")
+
+        copy = self.db.with_name("protas.db.v3.bak")
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            err,
+            f"protas: database updated from version 3 to 5; "
+            f"the previous one is kept at {copy}\n",
+        )
+        self.assertIn("Tarea de siempre", out)
+        # the next start has nothing to say and prints the same
+        self.assertEqual(again, (0, out, ""))
+
+    def test_a_database_that_needs_nothing_says_nothing(self):
+        code, out, err = self.run_cli("list", "--date", "2026-01-05")
+
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("Tarea de siempre", out)
+
+    def test_a_failed_update_only_reports_the_error(self):
+        with newer_protas({3: broken}, 4):
+            code, out, err = self.run_cli("list")
+
+        self.assertEqual((code, out), (1, ""))
+        self.assertEqual(len(err.splitlines()), 1)
+        self.assertTrue(err.startswith("protas: could not update"))
+
+    def test_the_move_to_workspaces_says_where_the_copy_is(self):
+        legacy = Path(self.tmp.name) / "legacy.db"
+        conn = sqlite3.connect(str(legacy))
+        conn.executescript(
+            """CREATE TABLE days (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE,
+                   title TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+               CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   day_id INTEGER NOT NULL REFERENCES days(id), parent_id INTEGER, text TEXT NOT NULL,
+                   done INTEGER NOT NULL DEFAULT 0, done_at TEXT, origin_id INTEGER,
+                   origin_day_id INTEGER, position INTEGER NOT NULL DEFAULT 0,
+                   created_at TEXT NOT NULL);
+               CREATE TABLE carries (origin_id INTEGER NOT NULL, day_id INTEGER NOT NULL,
+                   created_at TEXT NOT NULL, PRIMARY KEY (origin_id, day_id));
+               INSERT INTO days (date, title, created_at)
+                   VALUES ('2026-01-05', '2026-01-05', '2026-01-05T10:00:00');
+               INSERT INTO tasks (day_id, text, created_at)
+                   VALUES (1, 'Tarea vieja', '2026-01-05T10:00:00');"""
+        )
+        conn.close()
+
+        code, out, err = self.run_cli("list", "--date", "2026-01-05", db=legacy)
+        again = self.run_cli("list", "--date", "2026-01-05", db=legacy)
+
+        copy = legacy.with_name("legacy.db.before-workspaces.bak")
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            err,
+            f"protas: database moved to workspaces; the previous one is kept at {copy}\n",
+        )
+        self.assertIn("Tarea vieja", out)
+        self.assertEqual(again, (0, out, ""))
+
+    def test_the_store_itself_prints_nothing(self):
+        out, err = io.StringIO(), io.StringIO()
+        heard = []
+        with newer_protas({3: add_priority}, 4):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                Store(path=self.db).close()
+        self.set_version(3)
+        with newer_protas({3: raise_priority}, 4):
+            Store(path=self.db, notify=heard.append).close()
+
+        self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
+        self.assertEqual(len(heard), 1)
+        self.assertTrue(heard[0].startswith("database updated from version 3 to 4; "))
+
 
 if __name__ == "__main__":
     unittest.main()

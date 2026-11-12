@@ -25,7 +25,7 @@ import sqlite3
 from datetime import date as Date
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from . import rules
 from .db import connect, fts5_available
@@ -55,8 +55,18 @@ from .text import terms as text_terms
 class Store:
     """All persistence for workspaces, tasks and projects."""
 
-    def __init__(self, path: Path | str | None = None, conn: sqlite3.Connection | None = None):
-        self.conn = conn if conn is not None else connect(path)
+    def __init__(
+        self,
+        path: Path | str | None = None,
+        conn: sqlite3.Connection | None = None,
+        notify: Callable[[str], None] | None = None,
+    ):
+        """Open the database at ``path``.
+
+        ``notify`` receives one line when opening changed the database to
+        fit this protas. Without it the store says nothing.
+        """
+        self.conn = conn if conn is not None else connect(path, notify=notify)
         self.fts_enabled = fts5_available()
 
     # ------------------------------------------------------------------

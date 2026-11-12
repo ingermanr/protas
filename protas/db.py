@@ -383,18 +383,19 @@ def _is_legacy(conn: sqlite3.Connection) -> bool:
     return _table_exists(conn, "days") and not _table_exists(conn, "workspaces")
 
 
-def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> None:
+def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> Path | None:
     """Move a database from days to workspaces, all or nothing.
 
     The whole move runs in one transaction: when any step fails the file
-    keeps its old shape, so the next start can try again.
+    keeps its old shape, so the next start can try again. Returns where
+    the copy was kept, or None when another protas made the move.
     """
     try:
         backup = _backup_legacy(conn, path)
     except (OSError, sqlite3.Error) as error:
         if not _is_legacy(conn):
             # Another protas migrated it while this one was starting.
-            return
+            return None
         raise MigrationError(
             f"could not copy {path} before migrating it: {error}. "
             "The database was left untouched."
@@ -407,7 +408,7 @@ def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> None:
         if not _is_legacy(conn):
             # Another protas migrated it while this one waited for the lock.
             conn.execute("ROLLBACK")
-            return
+            return None
         for statement in _statements(LEGACY_RENAME + SCHEMA):
             conn.execute(statement)
         _migrate_v2(conn)
@@ -434,6 +435,7 @@ def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> None:
             conn.isolation_level = isolation_level
         except sqlite3.Error:
             pass
+    return backup
 
 
 def _migrate_v2(conn: sqlite3.Connection) -> None:
@@ -648,11 +650,11 @@ def _all_or_nothing(conn: sqlite3.Connection) -> Iterator[None]:
             pass
 
 
-def _update(conn: sqlite3.Connection, path: Path, version: int) -> bool:
+def _update(conn: sqlite3.Connection, path: Path, version: int) -> Path | None:
     """Walk the steps from ``version`` to the current one, all or nothing.
 
-    Returns False when another protas changed the version meanwhile, so
-    the caller looks at the database again.
+    Returns where the copy was kept, or None when another protas changed
+    the version meanwhile, so the caller looks at the database again.
     """
     steps = []
     for number in range(version, SCHEMA_VERSION):
@@ -673,7 +675,7 @@ def _update(conn: sqlite3.Connection, path: Path, version: int) -> bool:
         )
     except (OSError, sqlite3.Error) as error:
         if _stored_version(conn, path) != version:
-            return False
+            return None
         raise MigrationError(
             f"could not copy {path} before updating it: {error}. "
             "The database was left untouched."
@@ -683,7 +685,7 @@ def _update(conn: sqlite3.Connection, path: Path, version: int) -> bool:
         with _all_or_nothing(conn):
             if _stored_version(conn, path) != version:
                 # Another protas updated it while this one waited for the lock.
-                return False
+                return None
             for step in steps:
                 step(conn)
             _stamp(conn, SCHEMA_VERSION)
@@ -694,16 +696,25 @@ def _update(conn: sqlite3.Connection, path: Path, version: int) -> bool:
             f"could not update {path} from version {version} to {SCHEMA_VERSION}: {error}. "
             f"The database was left untouched and a copy is kept at {backup}."
         ) from error
-    return True
+    return backup
 
 
-def _bring_up_to_date(conn: sqlite3.Connection, path: Path) -> None:
+Notify = Callable[[str], None]
+
+
+def _bring_up_to_date(conn: sqlite3.Connection, path: Path, notify: Notify | None) -> None:
     """Update an older database; refuse one this protas does not know."""
     while True:
         version = _stored_version(conn, path)
         if version is None or version == SCHEMA_VERSION:
             return
-        if _update(conn, path, version):
+        backup = _update(conn, path, version)
+        if backup is not None:
+            if notify is not None:
+                notify(
+                    f"database updated from version {version} to {SCHEMA_VERSION}; "
+                    f"the previous one is kept at {backup}"
+                )
             return
 
 
@@ -715,8 +726,14 @@ def _stamp_current(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
-def connect(path: Path | str | None = None) -> sqlite3.Connection:
-    """Open the database, creating or migrating the schema when needed."""
+def connect(
+    path: Path | str | None = None, notify: Notify | None = None
+) -> sqlite3.Connection:
+    """Open the database, creating or migrating the schema when needed.
+
+    ``notify`` receives one line when the database was changed to fit
+    this protas, saying where the previous one is kept.
+    """
     target = Path(path).expanduser() if path else default_db_path()
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -726,11 +743,13 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
 
     try:
         if _is_legacy(conn):
-            _migrate_legacy(conn, target)
+            backup = _migrate_legacy(conn, target)
+            if backup is not None and notify is not None:
+                notify(f"database moved to workspaces; the previous one is kept at {backup}")
 
         # The steps run before SCHEMA: it describes the newest shape and
         # must not be laid over a database that is still an older one.
-        _bring_up_to_date(conn, target)
+        _bring_up_to_date(conn, target, notify)
 
         conn.executescript(SCHEMA)
         _stamp_current(conn)

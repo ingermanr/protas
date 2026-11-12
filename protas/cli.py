@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from . import text
+from . import __version__, db
 from .db import MigrationError
 from .store import Store, Task, Workspace, describe_event, today
 
@@ -87,6 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     export = sub.add_parser("export", help="export every day and project as markdown")
     export.add_argument("--out", default=None, help="output directory (default: ./protas-export)")
+
+    sub.add_parser("version", help="print the version of protas and of its schema")
+    sub.add_parser("doctor", help="check the database without changing it")
 
     search = sub.add_parser("search", help="search tasks, notes and workspaces")
     search.add_argument(
@@ -179,6 +183,20 @@ def _workspace_for(store: Store, args) -> Workspace:
         return workspace
     date_str = getattr(args, "date", None) or today()
     return store.open_day(date_str)
+
+
+def _notice(message: str) -> None:
+    """Things the user should know that are not the answer to the command."""
+    print(f"protas: {message}", file=sys.stderr)
+
+
+def cmd_doctor(args) -> int:
+    from .doctor import examine
+
+    path = Path(args.db).expanduser() if args.db else db.default_db_path()
+    report = examine(path)
+    print("\n".join(report.lines))
+    return 0 if report.healthy else 1
 
 
 def cmd_show(store: Store, args) -> int:
@@ -539,8 +557,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # These two answer without opening the database: they must work on
+    # one that cannot be opened and must never create or change it.
+    if args.command == "version":
+        print(f"protas {__version__} (schema {db.SCHEMA_VERSION})")
+        return 0
+    if args.command == "doctor":
+        return cmd_doctor(args)
+
     try:
-        store = Store(path=args.db)
+        store = Store(path=args.db, notify=_notice)
     except MigrationError as error:
         print(f"protas: {error}", file=sys.stderr)
         return 1

@@ -72,6 +72,8 @@ protas roll --to 2026-11-12
 protas projects
 protas history 3               # la historia del proyecto
 protas export --out ./protas-export
+protas version                 # versión de protas y de su esquema
+protas doctor                  # revisa la base sin cambiarla
 ```
 
 Las fechas se escriben como `AAAA-MM-DD`. Cualquier otra cosa se rechaza
@@ -213,6 +215,10 @@ sin correr ningún comando:
 - **Todo o nada.** Todos los pasos corren en una sola transacción. Si
   alguno falla, la base queda como estaba y `protas` sale con el error por
   la salida de error, diciendo dónde quedó la copia.
+- **Un aviso, una vez.** Cuando la base se actualiza, `protas` lo dice en
+  una línea por la salida de error, sin mezclarse con la respuesta del
+  comando: `protas: database updated from version 3 to 4; the previous
+  one is kept at …/protas.db.v3.bak`. Si no hubo cambios no dice nada.
 - **Una base más nueva no se toca.** Si la base la escribió un `protas`
   más nuevo que el instalado, se rechaza con un mensaje claro y no se
   modifica. Actualiza `protas` para abrirla.
@@ -226,6 +232,27 @@ con las mismas garantías; su copia se llama
 
 Para volver atrás, cierra `protas` y reemplaza la base por la copia.
 
+### Revisar la instalación
+
+`protas version` dice qué versión de `protas` está instalada y qué versión
+de esquema entiende. No abre la base.
+
+`protas doctor` revisa la base sin crearla, migrarla ni escribirla:
+
+```
+database:     /home/tu/.local/share/protas/protas.db
+schema:       version 3, up to date
+integrity:    ok
+search index: ok
+copies:       protas.db.v3.bak
+```
+
+Sale con código 1 cuando encuentra algo que `protas` no arregla solo: la
+base es de un `protas` más nuevo, su versión no se puede leer, el archivo
+no es una base o está dañado, o hay referencias rotas. Un índice de
+búsqueda ausente o desactualizado se informa, pero no es un problema:
+se reconstruye al abrir la base.
+
 ### Agregar un cambio de esquema
 
 En `protas/db.py`: cambia `SCHEMA` (lo que recibe una base nueva), sube
@@ -235,10 +262,6 @@ transacción y no debe hacer `commit` ni usar `executescript`.
 
 ## Roadmap
 
-- **Actualizaciones**: qué pasa cuando la app cambia de versión y el
-  usuario ya tiene su base con datos (migración, copia de seguridad,
-  `protas doctor`). Está documentado en
-  [`odd/tasks/protas-updates.md`](odd/tasks/protas-updates.md).
 - Panel de Omarchy: widget en la barra con las pendientes del día y un
   panel para marcarlas, leyendo la misma base de datos.
 - Resultados de búsqueda dentro de la TUI, navegables.
