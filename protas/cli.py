@@ -90,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     export = sub.add_parser("export", help="export every day and project as markdown")
     export.add_argument("--out", default=None, help="output directory (default: ./protas-export)")
+    export.add_argument(
+        "--format",
+        choices=("markdown", "obsidian"),
+        default="markdown",
+        help="markdown: plain files; obsidian: notes with properties and wikilinks",
+    )
 
     sub.add_parser("version", help="print the version of protas and of its schema")
     sub.add_parser("doctor", help="check the database without changing it")
@@ -552,6 +558,18 @@ def _progress_bar(progress: float, width: int = 10) -> str:
 
 def cmd_export(store: Store, args) -> int:
     out_dir = Path(args.out or "protas-export")
+
+    if args.format == "obsidian":
+        from . import obsidian
+
+        try:
+            obsidian.write(obsidian.render(store), out_dir)
+        except obsidian.ExportError as error:
+            print(f"protas: {error}", file=sys.stderr)
+            return 1
+        print(out_dir)
+        return 0
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for workspace in store.workspaces("day"):

@@ -101,6 +101,7 @@ protas roll --to 2026-11-12
 protas projects
 protas history 3               # la historia del proyecto
 protas export --out ./protas-export
+protas export --format obsidian --out ~/Boveda/protas   # notas para Obsidian
 protas version                 # versión de protas y de su esquema
 protas doctor                  # revisa la base sin cambiarla
 protas omarchy install         # instala o actualiza el panel de Omarchy
@@ -114,6 +115,27 @@ pendiente, así que un panel puede consultarlo cada pocos segundos sin
 cambiar la base. Devuelve el espacio (`workspace`), los totales
 (`counts`), la nota (`note`) y las entradas (`entries`) con su
 profundidad, su origen y, en las menciones, el avance del proyecto.
+
+### Exportar a Obsidian
+
+`protas export --format obsidian --out CARPETA` escribe una nota por día
+(`AAAA-MM-DD.md`) y una por proyecto (`projects/Título.md`), listas para
+abrir en una bóveda de Obsidian:
+
+- Cada nota empieza con propiedades: `date` y la etiqueta `protas/dia` en
+  los días; la etiqueta `protas/proyecto` y el `avance` en los proyectos.
+- Las tareas son casillas (`- [ ]`, `- [x]`) y las subtareas van sangradas.
+- La mención de un proyecto en un día es un enlace (`[[Título]]`), así que
+  los backlinks de Obsidian muestran en qué días se trabajó cada proyecto.
+- Un título que Obsidian no acepta como nombre de archivo se limpia, y el
+  original queda como `aliases`. Dos proyectos con el mismo título reciben
+  notas distintas.
+
+Es una exportación de ida: lo que edites en Obsidian no vuelve a protas, y
+exportar otra vez actualiza las notas. protas solo reemplaza las notas que
+él mismo escribió (las que empiezan con `source: protas`): si en la carpeta
+hay una nota tuya con el mismo nombre, no escribe nada y te avisa. Por eso
+conviene darle una carpeta propia dentro de la bóveda.
 
 ### Historial
 
@@ -332,4 +354,3 @@ código está en `protas/integrations/omarchy/german-ds.protas/`.
 ## Roadmap
 
 - Tareas recurrentes, prioridades y estimación de tiempo.
-- Exportación a Markdown (ya disponible) y a Obsidian.
