@@ -21,6 +21,7 @@
   <a href="#instalación">Instalación</a> ·
   <a href="#uso-diario">Uso diario</a> ·
   <a href="#búsqueda">Búsqueda</a> ·
+  <a href="#exportar-a-obsidian">Obsidian</a> ·
   <a href="#panel-de-omarchy">Panel de Omarchy</a> ·
   <a href="#roadmap">Roadmap</a>
 </p>
@@ -54,6 +55,8 @@ protas              # abre el espacio de trabajo de hoy en la TUI
 protas show         # imprime el espacio de trabajo de hoy
 protas show 2026-11-10
 protas show --project 3
+protas tui --date 2026-11-10    # abre la TUI en otro día
+protas tui --project 3          # abre la TUI en un proyecto
 ```
 
 Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
@@ -94,6 +97,7 @@ protas list --date 2026-11-11
 protas list --all --json        # el día como datos, para otras herramientas
 protas done 6
 protas undone 6
+protas rm 6                     # borra la entrada
 protas note "Resumen de la sesion" --date 2026-11-11
 protas promote 6                # la tarea pasa a ser un proyecto
 protas mention 3 --date 2026-11-12
