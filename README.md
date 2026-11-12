@@ -286,6 +286,10 @@ omarchy plugin validate ~/.config/omarchy/plugins/german-ds.protas
 omarchy plugin enable german-ds.protas
 ```
 
+Para actualizarlo, copia de nuevo la carpeta y reinicia la barra con
+`omarchy restart shell`: la recarga automática no reemplaza el panel que
+ya estaba en memoria.
+
 Espera el comando en `~/.local/bin/protas`. El intervalo de refresco
 (60 s por defecto) se ajusta en la configuración del widget.
 
