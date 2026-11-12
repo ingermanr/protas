@@ -308,6 +308,27 @@ class Store:
             self.rollover(date_str)
         return day
 
+    def discard_if_empty(self, workspace_id: int) -> bool:
+        """Forget a day that holds nothing. Returns True when it was removed.
+
+        Opening a day creates it, so only looking at one would leave an
+        empty day behind. Today always stays, and so does any day with an
+        entry or a note. A project is never discarded.
+        """
+        workspace = self.workspace(workspace_id)
+        if workspace is None or not workspace.is_day or workspace.date == today():
+            return False
+        if workspace.note.strip():
+            return False
+        row = self.conn.execute(
+            "SELECT 1 FROM tasks WHERE workspace_id = ?", (workspace_id,)
+        ).fetchone()
+        if row is not None:
+            return False
+        self.conn.execute("DELETE FROM workspaces WHERE id = ?", (workspace_id,))
+        self.conn.commit()
+        return True
+
     # ------------------------------------------------------------------
     # tasks
     # ------------------------------------------------------------------

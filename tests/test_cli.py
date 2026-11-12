@@ -144,6 +144,28 @@ class CliTest(unittest.TestCase):
         _, out = self.run_cli("projects")
         self.assertIn("Preparar el viaje  (0/1)", out)
 
+    def test_looking_at_a_day_does_not_create_it(self):
+        from protas.store import Store
+
+        code, out = self.run_cli("show", "2026-01-05")
+        self.assertEqual(code, 0)
+        self.assertIn("2026-01-05", out)
+        self.assertIn("(no tasks yet)", out)
+        self.assertEqual(self.run_cli("list", "--date", "2026-01-06")[0], 0)
+        self.assertEqual(self.run_cli("note", "--date", "2026-01-07")[0], 0)
+
+        self.run_cli("add", "Queda", "--date", "2026-01-08")
+        self.run_cli("note", "apunte", "--date", "2026-01-09")
+        self.run_cli("show", "2026-01-08")
+        self.run_cli("show", "2026-01-09")
+
+        store = Store(path=self.db)
+        try:
+            dates = sorted(day.date for day in store.workspaces("day"))
+        finally:
+            store.close()
+        self.assertEqual(dates, ["2026-01-08", "2026-01-09"])
+
 
 class InvalidDateTest(unittest.TestCase):
     """A day only exists for a real date written as YYYY-MM-DD."""

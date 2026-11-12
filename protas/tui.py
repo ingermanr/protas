@@ -448,6 +448,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
 
         ch = _command_code(key)
         if ch in (ord("q"),):
+            store.discard_if_empty(current_day.id)
             return
         elif ch in (ord("j"), curses.KEY_DOWN):
             selection = min(selection + 1, max(len(rows) - 1, 0))
@@ -541,7 +542,9 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 workspace = current_day
                 selection = 0
             else:
+                left_behind = current_day
                 current_day = store.open_day(_shift_date(current_day.date, -1))
+                store.discard_if_empty(left_behind.id)
                 workspace = current_day
                 selection = 0
                 view = "tasks"
@@ -549,7 +552,9 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
             if workspace.is_project:
                 pass
             else:
+                left_behind = current_day
                 current_day = store.open_day(_shift_date(current_day.date, 1))
+                store.discard_if_empty(left_behind.id)
                 workspace = current_day
                 selection = 0
                 view = "tasks"

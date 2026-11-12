@@ -425,5 +425,52 @@ class DaySubtaskTest(unittest.TestCase):
         self.assertEqual(len(self.store.projects()), 1)
 
 
+
+class EmptyDayTest(unittest.TestCase):
+    """A day that was only looked at leaves nothing behind."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(path=Path(self.tmp.name) / "protas.db")
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def dates(self):
+        return sorted(day.date for day in self.store.workspaces("day"))
+
+    def test_an_empty_day_is_discarded(self):
+        day = self.store.open_day("2026-01-05")
+
+        self.assertTrue(self.store.discard_if_empty(day.id))
+        self.assertEqual(self.dates(), [])
+        self.assertIsNone(self.store.day("2026-01-05"))
+
+    def test_a_day_with_something_in_it_stays(self):
+        from protas.store import today
+
+        with_task = self.store.open_day("2026-01-05")
+        self.store.add_task("Algo", with_task.id)
+        with_note = self.store.open_day("2026-01-06")
+        self.store.set_note(with_note.id, "una nota")
+        done = self.store.open_day("2026-01-07")
+        self.store.set_done(self.store.add_task("Hecha", done.id).id, True)
+        current = self.store.open_day(today())
+
+        for day in (with_task, with_note, done, current):
+            self.assertFalse(self.store.discard_if_empty(day.id))
+        self.assertEqual(
+            self.dates(), sorted(["2026-01-05", "2026-01-06", "2026-01-07", today()])
+        )
+
+    def test_a_project_is_never_discarded(self):
+        project = self.store.create_project("Sin nada todavia")
+
+        self.assertFalse(self.store.discard_if_empty(project.id))
+        self.assertIsNotNone(self.store.workspace(project.id))
+        self.assertFalse(self.store.discard_if_empty(9999))
+
+
 if __name__ == "__main__":
     unittest.main()

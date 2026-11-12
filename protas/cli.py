@@ -184,6 +184,8 @@ def _workspace_for(store: Store, args) -> Workspace:
 def cmd_show(store: Store, args) -> int:
     workspace = _workspace_for(store, args)
     print(render_workspace(store, workspace))
+    # Looking at a day must not leave an empty day behind.
+    store.discard_if_empty(workspace.id)
     return 0
 
 
@@ -192,6 +194,7 @@ def cmd_list(store: Store, args) -> int:
     for node, depth in walk(store.tasks_of(workspace.id, include_done=args.all)):
         marker = "[x]" if store.is_done(node) else "[ ]"
         print(f"{node.id} {marker} {'  ' * depth}{store.title_of(node)}")
+    store.discard_if_empty(workspace.id)
     return 0
 
 
@@ -235,6 +238,7 @@ def cmd_note(store: Store, args) -> int:
     workspace = _workspace_for(store, args)
     if args.text is None:
         print(store.note(workspace.id))
+        store.discard_if_empty(workspace.id)
         return 0
     store.set_note(workspace.id, args.text)
     return 0

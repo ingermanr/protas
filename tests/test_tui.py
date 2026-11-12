@@ -132,6 +132,53 @@ class TuiSmokeTest(unittest.TestCase):
         self.assertEqual(_editor_key("\x1b", editor), "cancel")
         self.assertEqual(_editor_key("\x13", editor), "save")
 
+    def test_walking_through_the_days_leaves_no_empty_days(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.store import Store, today
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = str(Path(tmp) / "protas.db")
+            master, slave = pty.openpty()
+            env = dict(os.environ)
+            env["TERM"] = "xterm-256color"
+            env["PYTHONPATH"] = str(REPO_ROOT)
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "protas", "--db", db, "tui"],
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                cwd=str(REPO_ROOT),
+                env=env,
+                close_fds=True,
+            )
+            os.close(slave)
+
+            try:
+                time.sleep(1.5)
+                # three days forward, a task there, five days back, then out
+                for chunk in (b"\x1bOC", b"\x1bOC", b"\x1bOC", b"aPara despues\r",
+                              b"\x1bOD", b"\x1bOD", b"\x1bOD", b"\x1bOD", b"\x1bOD", b"q"):
+                    os.write(master, chunk)
+                    time.sleep(0.3)
+                proc.wait(timeout=15)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                os.close(master)
+
+            self.assertEqual(proc.returncode, 0)
+
+            store = Store(path=db)
+            try:
+                days = {day.date: len(store.tasks_of(day.id)) for day in store.workspaces("day")}
+            finally:
+                store.close()
+            # today stays, the day that got a task stays, the rest is gone
+            self.assertEqual(len(days), 2)
+            self.assertEqual(days[today()], 0)
+            self.assertEqual(sorted(days.values()), [0, 1])
+
     def test_the_help_line_names_the_keys_that_exist(self):
         sys.path.insert(0, str(REPO_ROOT))
         from protas.tui import HELP
