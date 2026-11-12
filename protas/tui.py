@@ -230,8 +230,42 @@ def _history_lines(store: Store, workspace: Workspace) -> list[str]:
     return lines
 
 
-def _editor_key(ch: int, editor: Editor) -> str:
-    """Feed a key to the editor. Returns submit, save, cancel or continue."""
+def _read_key(stdscr) -> int | str | None:
+    """Read one key: a character as text, anything else as a key code.
+
+    ``get_wch`` decodes what the terminal sends with the locale, so an
+    accented letter arrives whole instead of as loose bytes.
+    """
+    try:
+        return stdscr.get_wch()
+    except curses.error:
+        return None
+
+
+def _command_code(key: int | str | None) -> int:
+    """The code the key bindings compare against.
+
+    A typed character only counts while it is plain ASCII: beyond that its
+    number could be mistaken for the code of an arrow or a function key.
+    """
+    if isinstance(key, int):
+        return key
+    if key and ord(key) < 128:
+        return ord(key)
+    return -1
+
+
+def _editor_key(ch: int | str, editor: Editor) -> str:
+    """Feed a key to the editor. Returns submit, save, cancel or continue.
+
+    A character comes as text and a special key as its code.
+    """
+    if isinstance(ch, str):
+        if ch.isprintable():
+            editor.buffer += ch
+            return "continue"
+        ch = ord(ch)
+
     if ch == 27:
         return "cancel"
     if ch == 19:  # Ctrl-S
@@ -287,10 +321,12 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
             selection = 0
 
         _draw(stdscr, store, workspace, rows, selection, message, editor, view)
-        ch = stdscr.getch()
+        key = _read_key(stdscr)
+        if key is None:
+            continue
 
         if editor is not None:
-            action = _editor_key(ch, editor)
+            action = _editor_key(key, editor)
             if action == "cancel":
                 editor = None
                 message = ""
@@ -324,6 +360,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 message = "nota guardada"
             continue
 
+        ch = _command_code(key)
         if ch in (ord("q"),):
             return
         elif ch in (ord("j"), curses.KEY_DOWN):

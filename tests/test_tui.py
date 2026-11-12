@@ -63,6 +63,75 @@ class TuiSmokeTest(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_accented_text_typed_in_the_workspace_is_saved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = str(Path(tmp) / "protas.db")
+            master, slave = pty.openpty()
+
+            env = dict(os.environ)
+            env["TERM"] = "xterm-256color"
+            env["PYTHONPATH"] = str(REPO_ROOT)
+
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "protas", "--db", db, "tui"],
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                cwd=str(REPO_ROOT),
+                env=env,
+                close_fds=True,
+            )
+            os.close(slave)
+
+            try:
+                time.sleep(1.5)
+                os.write(master, "aDiseño según el año\r".encode("utf-8"))
+                time.sleep(0.5)
+                os.write(master, b"q")
+                proc.wait(timeout=15)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                os.close(master)
+
+            self.assertEqual(proc.returncode, 0)
+
+            sys.path.insert(0, str(REPO_ROOT))
+            from protas.store import Store
+
+            store = Store(path=db)
+            try:
+                tasks = store.tasks_of(store.open_day().id)
+                self.assertEqual([t.text for t in tasks], ["Diseño según el año"])
+            finally:
+                store.close()
+
+    def test_the_editor_takes_characters_and_key_codes(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.tui import Editor, _editor_key
+
+        editor = Editor("Nueva tarea: ", "task")
+        for key in ("a", "ñ", "o", "€"):
+            self.assertEqual(_editor_key(key, editor), "continue")
+        self.assertEqual(editor.buffer, "año€")
+
+        # key codes keep working as before
+        self.assertEqual(_editor_key(ord("s"), editor), "continue")
+        self.assertEqual(editor.buffer, "año€s")
+        self.assertEqual(_editor_key(127, editor), "continue")
+        self.assertEqual(_editor_key("\x7f", editor), "continue")
+        self.assertEqual(editor.buffer, "año")
+
+        # an arrow is a key code, never the character with the same number
+        self.assertEqual(_editor_key(260, editor), "continue")
+        self.assertEqual(editor.buffer, "año")
+
+        self.assertEqual(_editor_key("\n", editor), "submit")
+        self.assertEqual(_editor_key(10, editor), "submit")
+        self.assertEqual(_editor_key("\x1b", editor), "cancel")
+        self.assertEqual(_editor_key("\x13", editor), "save")
+
     def test_the_note_of_the_day_is_drawn_above_the_entries(self):
         sys.path.insert(0, str(REPO_ROOT))
         from protas.store import Store
