@@ -195,6 +195,34 @@ class StatsCliTest(unittest.TestCase):
         self.assertEqual(len(payload["days"]), 14)
         self.assertIn("streak", payload)
 
+class ComputeStatsTest(unittest.TestCase):
+    """The counting works on plain rows, with no database and a fixed today."""
+
+    def test_a_carried_task_is_one_commitment_and_the_streak_ends_on_a_gap(self):
+        from protas.stats import compute_stats
+
+        rows = [
+            {"id": 1, "origin_id": None, "done": 0, "project_id": None, "date": "2026-03-02"},
+            {"id": 2, "origin_id": 1, "done": 1, "project_id": None, "date": "2026-03-03"},
+            {"id": 3, "origin_id": None, "done": 0, "project_id": None, "date": "2026-03-03"},
+            {"id": 4, "origin_id": None, "done": 0, "project_id": 9, "date": "2026-03-04"},
+            {"id": 5, "origin_id": None, "done": 1, "project_id": None, "date": "2026-02-27"},
+        ]
+
+        stats = compute_stats(rows, ["2026-03-04"], [], 3, date(2026, 3, 4))
+
+        self.assertEqual([day.date for day in stats.window],
+                         ["2026-03-02", "2026-03-03", "2026-03-04"])
+        self.assertEqual([(d.tasks, d.done, d.projects) for d in stats.window],
+                         [(1, 0, 0), (2, 1, 0), (0, 0, 1)])
+        # tasks 1 and 2 are the same commitment, and it ended done
+        self.assertEqual((stats.started, stats.finished), (2, 1))
+        # the 4th has project activity, the 3rd a done task, the 2nd nothing
+        self.assertEqual(stats.streak, 2)
+        self.assertEqual(stats.completed_per_day, 1)
+        self.assertEqual(stats.active_days, 2)
+        self.assertEqual(stats.projects, [])
+
 
 if __name__ == "__main__":
     unittest.main()
