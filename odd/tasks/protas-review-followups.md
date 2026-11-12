@@ -31,7 +31,7 @@ Test runner: `python -m unittest discover -s tests` (pytest is not installed).
 - [x] T2 (S2) closed without changes (see L7).
 - [x] T3 (S3) inline. Commit `3d74792`.
 - [x] T4 (S4) inline. Commit `bd7d851`.
-- [ ] T5 (S5) blocked on the user's decision.
+- [x] T5 (S5) inline. Commits `cca598e`, `3f45e49`, `6f16e18`.
 
 ## Log
 
@@ -60,3 +60,12 @@ Test runner: `python -m unittest discover -s tests` (pytest is not installed).
   tareas de prueba". The future day became today, so its two copies are the
   ones today's rollover would create; nothing was deleted from the installed
   database. Next: T5 proposal.
+- L8 (2026-11-12, user): "dale, aprobado" to the proposal: keep `Store` as the
+  facade with its API untouched and extract what needs no database, in three
+  commits. `models.py` holds the dataclasses and date helpers (re-exported by
+  `store.py`), `stats.py` the counting (`compute_stats`, takes today as an
+  argument), `rules.py` the project state and the lineage walk of the
+  rollover. The full repository pattern was discarded: it rewrites 63 uses of
+  the connection for a single backend. 185 tests pass (8 new, without a
+  database). `store.py` went from 1305 to 1019 lines.
+- L9: slice `7c4c12d..6f16e18` assessed: medium, review not due (`under_budget`).
