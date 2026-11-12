@@ -168,7 +168,9 @@ la búsqueda sigue funcionando con un escaneo simple, solo que más lento.
   están hechas, el proyecto está hecho y todas sus menciones aparecen
   hechas. Reabrir una tarea del proyecto reabre el proyecto. Un proyecto
   sin tareas se marca como cualquier entrada, y agregarle una tarea lo
-  reabre.
+  reabre. Un proyecto dentro de otro cuenta como una entrada más del
+  externo, con su estado vivo: completar el externo completa también lo
+  que hay dentro.
 - **Arrastre**: lo pendiente se **copia** al día siguiente y la entrada
   original se queda donde estaba, así cada día conserva un registro honesto
   de lo que realmente pasó. Un registro de arrastes evita duplicados, y las

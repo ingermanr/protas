@@ -288,5 +288,74 @@ class EmptyProjectTest(unittest.TestCase):
         self.assertFalse(self.store.is_done(self.store.task(self.entry.id)))
 
 
+
+class NestedProjectTest(unittest.TestCase):
+    """A project inside a project counts with its live state."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(path=Path(self.tmp.name) / "protas.db")
+        self.day = self.store.ensure_day("2026-11-02")
+        self.entry = self.store.add_task("Externo", self.day.id)
+        self.outer = self.store.promote(self.entry.id)
+        self.inner_entry = self.store.add_task("Interno", self.outer.id)
+        self.inner = self.store.promote(self.inner_entry.id)
+        self.leaf = self.store.add_task("Hoja", self.inner.id)
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_finishing_the_inner_project_finishes_the_outer_one(self):
+        self.store.set_done(self.leaf.id, True)
+
+        self.assertTrue(self.store.project_is_done(self.inner.id))
+        self.assertEqual(
+            self.store.project_state(self.outer.id), {"total": 1, "done": 1, "open": 0}
+        )
+        self.assertTrue(self.store.project_is_done(self.outer.id))
+        self.assertTrue(self.store.is_done(self.store.task(self.entry.id)))
+        self.assertEqual(self.store.rollover("2026-11-03"), [])
+
+    def test_reopening_inside_reopens_the_outer_one(self):
+        self.store.set_done(self.leaf.id, True)
+        self.store.set_done(self.leaf.id, False)
+
+        self.assertFalse(self.store.project_is_done(self.outer.id))
+        self.assertEqual(
+            self.store.project_state(self.outer.id), {"total": 1, "done": 0, "open": 1}
+        )
+
+    def test_completing_the_outer_project_completes_what_is_inside(self):
+        self.store.set_done(self.entry.id, True)
+
+        self.assertTrue(self.store.task(self.leaf.id).done)
+        self.assertTrue(self.store.project_is_done(self.inner.id))
+        self.assertTrue(self.store.project_is_done(self.outer.id))
+
+        self.store.set_done(self.entry.id, False)
+        self.assertFalse(self.store.task(self.leaf.id).done)
+        self.assertFalse(self.store.project_is_done(self.outer.id))
+
+    def test_plain_tasks_and_inner_projects_count_together(self):
+        plain = self.store.add_task("Suelta", self.outer.id)
+
+        self.store.set_done(self.leaf.id, True)
+        self.assertEqual(
+            self.store.project_state(self.outer.id), {"total": 2, "done": 1, "open": 1}
+        )
+        self.assertFalse(self.store.project_is_done(self.outer.id))
+
+        self.store.set_done(plain.id, True)
+        self.assertTrue(self.store.project_is_done(self.outer.id))
+
+    def test_projects_that_mention_each_other_do_not_loop(self):
+        self.store.add_mention(self.outer.id, self.inner.id)
+
+        self.assertFalse(self.store.project_is_done(self.outer.id))
+        self.store.set_done(self.entry.id, True)
+        self.assertTrue(self.store.task(self.leaf.id).done)
+
+
 if __name__ == "__main__":
     unittest.main()

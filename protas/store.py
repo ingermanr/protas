@@ -426,22 +426,37 @@ class Store:
             return self.project_is_done(task.project_id)
         return task.done
 
-    def project_state(self, project_id: int) -> dict[str, int]:
+    def project_state(
+        self, project_id: int, _seen: frozenset[int] = frozenset()
+    ) -> dict[str, int]:
+        """How many entries a project holds and how many are done.
+
+        A project inside the project counts as one entry with its live
+        state. ``_seen`` holds the projects already being counted, so two
+        projects that mention each other cannot loop.
+        """
+        seen = _seen | {project_id}
         rows = self.conn.execute(
-            "SELECT done FROM tasks WHERE workspace_id = ?", (project_id,)
+            "SELECT done, project_id FROM tasks WHERE workspace_id = ?", (project_id,)
         ).fetchall()
         total = len(rows)
-        done = sum(1 for row in rows if row["done"])
+        done = 0
+        for row in rows:
+            inner = row["project_id"]
+            if inner is not None and inner not in seen:
+                done += 1 if self.project_is_done(inner, seen) else 0
+            elif row["done"]:
+                done += 1
         return {"total": total, "done": done, "open": total - done}
 
-    def project_is_done(self, project_id: int) -> bool:
+    def project_is_done(self, project_id: int, _seen: frozenset[int] = frozenset()) -> bool:
         """The live state of a project.
 
         A project with tasks is done when all of them are. A project
         without tasks has nothing to derive its state from, so it keeps it
         on the entries that mention it, like a plain task would.
         """
-        state = self.project_state(project_id)
+        state = self.project_state(project_id, _seen)
         if state["total"] == 0:
             row = self.conn.execute(
                 "SELECT 1 FROM tasks WHERE project_id = ? AND done = 1", (project_id,)
@@ -490,12 +505,18 @@ class Store:
         self.conn.commit()
         return self.task(task_id)
 
-    def _set_project_done(self, project_id: int, done: bool) -> None:
+    def _set_project_done(
+        self, project_id: int, done: bool, _seen: frozenset[int] = frozenset()
+    ) -> None:
+        seen = _seen | {project_id}
         rows = self.conn.execute(
-            "SELECT id FROM tasks WHERE workspace_id = ?", (project_id,)
+            "SELECT id, project_id FROM tasks WHERE workspace_id = ?", (project_id,)
         ).fetchall()
         for row in rows:
             self._write_done(row["id"], done)
+            # A project inside goes the same way, with everything it holds.
+            if row["project_id"] is not None and row["project_id"] not in seen:
+                self._set_project_done(row["project_id"], done, seen)
         if not rows:
             # Nothing inside to complete: the state goes on every entry
             # that mentions the project, so all the days agree.
