@@ -271,10 +271,25 @@ En `protas/db.py`: cambia `SCHEMA` (lo que recibe una base nueva), sube
 la versión anterior a la nueva. El paso recibe la conexión dentro de la
 transacción y no debe hacer `commit` ni usar `executescript`.
 
+## Panel de Omarchy
+
+`integrations/omarchy/german-ds.protas/` es un widget para la barra de
+Omarchy: muestra cuántas entradas quedan pendientes hoy y, al abrirlo, la
+agenda del día con su nota y el avance de los proyectos mencionados. Solo
+lee (consulta `protas list --all --json`); su única acción es abrir la TUI.
+
+```bash
+cp -r integrations/omarchy/german-ds.protas ~/.config/omarchy/plugins/
+omarchy plugin validate ~/.config/omarchy/plugins/german-ds.protas
+omarchy plugin enable german-ds.protas
+```
+
+Espera el comando en `~/.local/bin/protas`. El intervalo de refresco
+(60 s por defecto) se ajusta en la configuración del widget.
+
 ## Roadmap
 
-- Panel de Omarchy: widget en la barra con las pendientes del día y un
-  panel para marcarlas, leyendo la misma base de datos.
+- Panel de Omarchy: marcar tareas desde el panel (hoy solo lee).
 - Resultados de búsqueda dentro de la TUI, navegables.
 - Tareas recurrentes, prioridades y estimación de tiempo.
 - Exportación a Markdown (ya disponible) y a Obsidian.

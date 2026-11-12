@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "german-ds.protas",
+  "name": "protas",
+  "version": "1.0.0",
+  "author": "german-ds",
+  "license": "MIT",
+  "description": "Today's agenda from protas: pending work, the note of the day, and project progress. Read-only.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "protas",
+    "description": "How much work is left today, and what it is.",
+    "category": "Productivity",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 60
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Background refresh interval (seconds)",
+        "min": 10,
+        "max": 3600,
+        "step": 10,
+        "defaultValue": 60
+      }
+    ]
+  }
+}
