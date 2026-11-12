@@ -52,6 +52,8 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `s` | ver los números |
 | `esc` | volver del proyecto al día |
 | `←` / `→` | moverse entre días |
+| `r` | actualizar el día (trae lo pendiente si es hoy) |
+| `g` / `G` | ir a la primera o a la última entrada |
 | `q` | salir |
 
 ### Comandos

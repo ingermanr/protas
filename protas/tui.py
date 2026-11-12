@@ -17,7 +17,8 @@ from .store import Store, Task, Workspace, check_date, describe_event, today
 
 HELP = (
     "j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
-    "e editar | n nota | x borrar | enter abrir | esc volver | < > dia | q salir"
+    "e editar | n nota | x borrar | enter abrir | esc volver | ←/→ dia | "
+    "h historia | s numeros | q salir | r actualizar | g/G inicio/fin"
 )
 
 

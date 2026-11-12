@@ -132,6 +132,32 @@ class TuiSmokeTest(unittest.TestCase):
         self.assertEqual(_editor_key("\x1b", editor), "cancel")
         self.assertEqual(_editor_key("\x13", editor), "save")
 
+    def test_the_help_line_names_the_keys_that_exist(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.tui import HELP
+
+        for label in (
+            "j/k mover",
+            "espacio completar",
+            "a tarea",
+            "A subtarea",
+            "p proyecto",
+            "e editar",
+            "n nota",
+            "x borrar",
+            "enter abrir",
+            "esc volver",
+            "←/→ dia",
+            "h historia",
+            "s numeros",
+            "r actualizar",
+            "g/G inicio/fin",
+            "q salir",
+        ):
+            self.assertIn(label, HELP)
+        # the day is changed with the arrows, not with < and >
+        self.assertNotIn("< >", HELP)
+
     def test_the_note_of_the_day_is_drawn_above_the_entries(self):
         sys.path.insert(0, str(REPO_ROOT))
         from protas.store import Store
