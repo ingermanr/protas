@@ -6,3 +6,4 @@ protas-export/
 *.db-journal
 *.db-wal
 *.db-shm
+.atl/
