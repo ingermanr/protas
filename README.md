@@ -71,6 +71,9 @@ protas history 3               # la historia del proyecto
 protas export --out ./protas-export
 ```
 
+Las fechas se escriben como `AAAA-MM-DD`. Cualquier otra cosa se rechaza
+con un error y no crea ningún día.
+
 ### Historial
 
 Cada proyecto lleva su propia historia: cuándo se creó, qué se le agregó,

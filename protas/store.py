@@ -42,6 +42,22 @@ def today() -> str:
     return Date.today().strftime(ISO_FORMAT)
 
 
+def check_date(date_str: str) -> str:
+    """Return ``date_str`` when it is a real day written as YYYY-MM-DD.
+
+    Days are compared and sorted as text, so only the canonical form is
+    accepted: anything else would create a day that sorts in the wrong
+    place and receives work it should not.
+    """
+    try:
+        canonical = Date.fromisoformat(date_str).strftime(ISO_FORMAT)
+    except (TypeError, ValueError):
+        canonical = None
+    if canonical != date_str:
+        raise ValueError(f"'{date_str}' is not a valid date, use YYYY-MM-DD")
+    return date_str
+
+
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -209,6 +225,7 @@ class Store:
 
     def ensure_day(self, date_str: str) -> Workspace:
         """Return the day workspace, creating it when missing."""
+        check_date(date_str)
         row = self.conn.execute(
             "SELECT * FROM workspaces WHERE kind = 'day' AND date = ?", (date_str,)
         ).fetchone()

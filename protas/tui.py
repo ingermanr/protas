@@ -13,7 +13,7 @@ from datetime import date as Date
 from datetime import timedelta
 from typing import Optional
 
-from .store import Store, Task, Workspace, describe_event, today
+from .store import Store, Task, Workspace, check_date, describe_event, today
 
 HELP = (
     "j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
@@ -489,5 +489,8 @@ def _ensure_utf8_locale() -> None:
 
 def run_tui(store: Store, date_str: str | None = None, project_id: int | None = None) -> None:
     """Open the interactive workspace."""
+    if date_str is not None:
+        # Refuse a bad date before the terminal is taken over.
+        check_date(date_str)
     _ensure_utf8_locale()
     curses.wrapper(_run, store, date_str, project_id)

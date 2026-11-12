@@ -28,21 +28,21 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     tui = sub.add_parser("tui", help="open the interactive workspace")
-    tui.add_argument("date", nargs="?", help="day to open (default: today)")
+    tui.add_argument("date", nargs="?", help="day to open as YYYY-MM-DD (default: today)")
     tui.add_argument("--project", type=int, default=None, help="project to open")
 
     show = sub.add_parser("show", help="print a workspace")
-    show.add_argument("date", nargs="?", help="day to show (default: today)")
+    show.add_argument("date", nargs="?", help="day to show as YYYY-MM-DD (default: today)")
     show.add_argument("--project", type=int, default=None, help="project to show")
 
     listing = sub.add_parser("list", help="list the entries of a workspace")
-    listing.add_argument("--date", default=None)
+    listing.add_argument("--date", default=None, help="day as YYYY-MM-DD (default: today)")
     listing.add_argument("--project", type=int, default=None)
     listing.add_argument("--all", action="store_true", help="include finished entries")
 
     add = sub.add_parser("add", help="add a task")
     add.add_argument("text")
-    add.add_argument("--date", default=None)
+    add.add_argument("--date", default=None, help="day as YYYY-MM-DD (default: today)")
     add.add_argument("--project", type=int, default=None, help="add the task inside a project")
     add.add_argument("--parent", type=int, default=None, help="id of the parent task")
 
@@ -57,18 +57,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     note = sub.add_parser("note", help="read or write the note of a workspace")
     note.add_argument("text", nargs="?")
-    note.add_argument("--date", default=None)
+    note.add_argument("--date", default=None, help="day as YYYY-MM-DD (default: today)")
     note.add_argument("--project", type=int, default=None)
 
     roll = sub.add_parser("roll", help="carry pending work into a day")
-    roll.add_argument("--to", default=None)
+    roll.add_argument("--to", default=None, help="day as YYYY-MM-DD (default: today)")
 
     promote = sub.add_parser("promote", help="turn a task into a project")
     promote.add_argument("id", type=int)
 
     mention = sub.add_parser("mention", help="add a project to the agenda of a day")
     mention.add_argument("project", type=int)
-    mention.add_argument("--date", default=None)
+    mention.add_argument("--date", default=None, help="day as YYYY-MM-DD (default: today)")
 
     sub.add_parser("projects", help="list every project")
 

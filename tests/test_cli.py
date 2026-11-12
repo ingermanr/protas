@@ -129,5 +129,62 @@ class CliTest(unittest.TestCase):
         self.assertIn("Migrar la base de datos", out)
 
 
+
+class InvalidDateTest(unittest.TestCase):
+    """A day only exists for a real date written as YYYY-MM-DD."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "protas.db")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_cli(self, *args):
+        out = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(["--db", self.db, *args])
+        return code, out.getvalue(), err.getvalue()
+
+    def days(self):
+        from protas.store import Store
+
+        store = Store(path=self.db)
+        try:
+            return sorted(day.date for day in store.workspaces("day"))
+        finally:
+            store.close()
+
+    def test_commands_refuse_a_date_that_is_not_a_date(self):
+        self.run_cli("add", "Pendiente", "--date", "2026-11-10")
+
+        attempts = [
+            ("add", "Otra", "--date", "foo"),
+            ("show", "mañana"),
+            ("list", "--date", "2026-13-40"),
+            ("note", "texto", "--date", "2026-1-5"),
+            ("mention", "1", "--date", "20261111"),
+            ("roll", "--to", "foo"),
+            ("tui", "foo"),
+        ]
+        for args in attempts:
+            with self.subTest(args=args):
+                code, out, err = self.run_cli(*args)
+                self.assertEqual(code, 1)
+                self.assertEqual(out, "")
+                self.assertIn(f"protas: '{args[-1]}' is not a valid date, use YYYY-MM-DD", err)
+
+        # nothing was created and nothing was carried anywhere
+        self.assertEqual(self.days(), ["2026-11-10"])
+
+    def test_a_real_date_keeps_working(self):
+        code, out, _ = self.run_cli("add", "Vale", "--date", "2024-02-29")
+        self.assertEqual(code, 0)
+        code, out, _ = self.run_cli("show", "2024-02-29")
+        self.assertEqual(code, 0)
+        self.assertIn("Vale", out)
+
+
 if __name__ == "__main__":
     unittest.main()
