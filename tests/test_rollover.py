@@ -234,5 +234,74 @@ class FutureDayTest(unittest.TestCase):
         self.assertEqual([self.store.task(i).text for i in carried], ["Para adelantar"])
 
 
+
+class DeletedCopyTest(unittest.TestCase):
+    """Deleting a carried entry ends its journey."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from protas.store import Store
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(path=Path(self.tmp.name) / "protas.db")
+        self.first = self.store.ensure_day("2026-11-02")
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def _texts(self, date):
+        day = self.store.day(date)
+        return [self.store.title_of(task) for task in self.store.tasks_of(day.id)]
+
+    def test_a_deleted_copy_does_not_come_back_the_next_day(self):
+        original = self.store.add_task("Ya no la quiero", self.first.id)
+        self.store.add_task("Esta sigue", self.first.id)
+
+        carried = self.store.rollover("2026-11-03")
+        copy = next(i for i in carried if self.store.task(i).origin_id == original.id)
+        self.store.delete_task(copy)
+
+        again = self.store.rollover("2026-11-04")
+        self.assertEqual([self.store.task(i).text for i in again], ["Esta sigue"])
+        self.assertEqual(self._texts("2026-11-04"), ["Esta sigue"])
+
+        # the day it was written on keeps it, still pending
+        self.assertEqual(self._texts("2026-11-02"), ["Ya no la quiero", "Esta sigue"])
+        self.assertFalse(self.store.task(original.id).done)
+
+    def test_a_deleted_project_mention_does_not_come_back(self):
+        task = self.store.add_task("Proyecto largo", self.first.id)
+        project = self.store.promote(task.id)
+        self.store.add_task("Paso pendiente", project.id)
+
+        carried = self.store.rollover("2026-11-03")
+        self.assertEqual(len(carried), 1)
+        self.store.delete_task(carried[0])
+
+        self.assertEqual(self.store.rollover("2026-11-04"), [])
+        self.assertEqual(self._texts("2026-11-04"), [])
+        # the project itself is untouched
+        self.assertEqual(self.store.project_state(project.id)["open"], 1)
+
+    def test_a_copy_that_was_kept_still_walks_day_by_day(self):
+        self.store.add_task("Sigue pendiente", self.first.id)
+
+        self.store.rollover("2026-11-03")
+        again = self.store.rollover("2026-11-04")
+
+        self.assertEqual([self.store.task(i).text for i in again], ["Sigue pendiente"])
+        self.assertEqual(self._texts("2026-11-04"), ["Sigue pendiente"])
+
+    def test_a_task_never_carried_is_brought_after_a_gap(self):
+        self.store.add_task("Quedo atras", self.first.id)
+
+        carried = self.store.rollover("2026-11-06")
+
+        self.assertEqual([self.store.task(i).text for i in carried], ["Quedo atras"])
+
+
 if __name__ == "__main__":
     unittest.main()

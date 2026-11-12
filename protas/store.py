@@ -675,7 +675,8 @@ class Store:
 
         Only the newest appearance of every lineage travels, so a task
         walks one day at a time instead of piling up copies. A project is
-        carried as a mention while it still has open work.
+        carried as a mention while it still has open work. An entry whose
+        carried copy was deleted stays behind.
         """
         target_str = target or today()
         target_workspace = self.ensure_day(target_str)
@@ -718,6 +719,8 @@ class Store:
                 continue
             if self._already_carried(source["id"], target_workspace.id):
                 continue
+            if self._copy_was_deleted(source["id"], target_str):
+                continue
             if source["project_id"] is not None and self._already_mentioned(
                 source["project_id"], target_workspace.id
             ):
@@ -744,6 +747,21 @@ class Store:
         row = self.conn.execute(
             "SELECT 1 FROM carries WHERE origin_id = ? AND workspace_id = ?",
             (origin_id, workspace_id),
+        ).fetchone()
+        return row is not None
+
+    def _copy_was_deleted(self, origin_id: int, target: str) -> bool:
+        """True when the entry already travelled and its copy is gone.
+
+        ``origin_id`` is the newest appearance of its lineage before
+        ``target``. If the ledger says it was carried into an earlier day,
+        a living copy would be newer than it, so the user deleted that
+        copy: the entry is not wanted any more and its journey ends there.
+        """
+        row = self.conn.execute(
+            """SELECT 1 FROM carries c JOIN workspaces w ON w.id = c.workspace_id
+               WHERE c.origin_id = ? AND w.date < ?""",
+            (origin_id, target),
         ).fetchone()
         return row is not None
 
