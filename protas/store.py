@@ -885,7 +885,7 @@ class Store:
             query = build_match_query(term)
             if query:
                 sql = """SELECT t.id AS task_id, w.date AS date, t.text AS text,
-                                bm25(tasks_fts) AS score
+                                w.id AS workspace_id, bm25(tasks_fts) AS score
                          FROM tasks_fts
                          JOIN tasks t ON t.id = tasks_fts.rowid
                          JOIN workspaces w ON w.id = t.workspace_id
@@ -904,14 +904,21 @@ class Store:
                 sql += " ORDER BY w.date DESC, t.id DESC"
                 for row in self.conn.execute(sql, params):
                     hits.append(
-                        Hit("task", row["date"] or "", row["text"], row["task_id"], row["score"])
+                        Hit(
+                            "task",
+                            row["date"] or "",
+                            row["text"],
+                            row["task_id"],
+                            row["score"],
+                            row["workspace_id"],
+                        )
                     )
 
         if "note" in kinds:
             query = build_match_query(term, column="note")
             if query:
                 sql = """SELECT w.date AS date, w.title AS title, w.note AS text,
-                                bm25(workspaces_fts) AS score
+                                w.id AS workspace_id, bm25(workspaces_fts) AS score
                          FROM workspaces_fts
                          JOIN workspaces w ON w.id = workspaces_fts.rowid
                          WHERE workspaces_fts MATCH ? AND w.note != ''"""
@@ -924,7 +931,16 @@ class Store:
                     params.append(until)
                 sql += " ORDER BY w.date DESC"
                 for row in self.conn.execute(sql, params):
-                    hits.append(Hit("note", row["date"] or "", row["text"], None, row["score"]))
+                    hits.append(
+                        Hit(
+                            "note",
+                            row["date"] or "",
+                            row["text"],
+                            None,
+                            row["score"],
+                            row["workspace_id"],
+                        )
+                    )
 
         for kind in ("day", "project"):
             if kind not in kinds:
@@ -946,7 +962,14 @@ class Store:
                 sql += " ORDER BY w.date DESC"
                 for row in self.conn.execute(sql, params):
                     hits.append(
-                        Hit(kind, row["date"] or "", row["text"], None, row["score"])
+                        Hit(
+                            kind,
+                            row["date"] or "",
+                            row["text"],
+                            None,
+                            row["score"],
+                            row["workspace_id"],
+                        )
                     )
 
         return hits
@@ -977,12 +1000,21 @@ class Store:
             elif state == "done":
                 clauses.append("t.done = 1")
             where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
-            sql = f"""SELECT t.id AS task_id, w.date AS date, t.text AS text
+            sql = f"""SELECT t.id AS task_id, w.date AS date, t.text AS text,
+                             w.id AS workspace_id
                       FROM tasks t JOIN workspaces w ON w.id = t.workspace_id{where}
                       ORDER BY w.date DESC, t.id DESC"""
             for row in self.conn.execute(sql, params):
                 if text_matches(row["text"], query_terms):
-                    hits.append(Hit("task", row["date"] or "", row["text"], row["task_id"]))
+                    hits.append(
+                        Hit(
+                            "task",
+                            row["date"] or "",
+                            row["text"],
+                            row["task_id"],
+                            workspace_id=row["workspace_id"],
+                        )
+                    )
 
         if "note" in kinds:
             clauses = []
@@ -995,12 +1027,20 @@ class Store:
                 params.append(until)
             clauses.append("w.note != ''")
             sql = (
-                "SELECT w.date AS date, w.note AS text FROM workspaces w WHERE "
+                "SELECT w.date AS date, w.note AS text, w.id AS workspace_id"
+                " FROM workspaces w WHERE "
                 + " AND ".join(clauses)
             )
             for row in self.conn.execute(sql, params):
                 if text_matches(row["text"], query_terms):
-                    hits.append(Hit("note", row["date"] or "", row["text"]))
+                    hits.append(
+                        Hit(
+                            "note",
+                            row["date"] or "",
+                            row["text"],
+                            workspace_id=row["workspace_id"],
+                        )
+                    )
 
         for kind in ("day", "project"):
             if kind not in kinds:
@@ -1016,12 +1056,20 @@ class Store:
             clauses.append("w.kind = ?")
             params.append(kind)
             sql = (
-                "SELECT w.date AS date, w.title AS text FROM workspaces w WHERE "
+                "SELECT w.date AS date, w.title AS text, w.id AS workspace_id"
+                " FROM workspaces w WHERE "
                 + " AND ".join(clauses)
             )
             for row in self.conn.execute(sql, params):
                 if text_matches(row["text"], query_terms):
-                    hits.append(Hit(kind, row["date"] or "", row["text"]))
+                    hits.append(
+                        Hit(
+                            kind,
+                            row["date"] or "",
+                            row["text"],
+                            workspace_id=row["workspace_id"],
+                        )
+                    )
 
         return hits
 

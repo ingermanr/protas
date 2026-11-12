@@ -47,6 +47,7 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `e` | editar el texto |
 | `n` | editar la nota: `↑`/`↓` cambian de línea, `Enter` abre una línea, `Ctrl-S` guarda, `Esc` cancela |
 | `x` | borrar la entrada |
+| `/` | buscar; en los resultados, `j`/`k` mueven, `enter` abre y `esc` vuelve |
 | `enter` | abrir el proyecto de una mención |
 | `h` | ver la historia del proyecto |
 | `s` | ver los números |
@@ -161,6 +162,12 @@ protas search equipo --since 2026-11-01 --until 2026-11-30
 protas search informe --open          # solo tareas pendientes
 protas search migrar --json           # salida para scripts
 ```
+
+En la TUI, `/` pide el texto y muestra los resultados con su fecha y su
+tipo. `enter` abre el día o el proyecto del resultado y deja seleccionada
+la tarea encontrada; `/` seguido de `enter` repite la última búsqueda, para
+volver a la lista después de abrir un resultado. Una tarea pendiente que
+se arrastró aparece una vez por cada día en que estuvo.
 
 La búsqueda ignora mayúsculas y tildes (`session` encuentra `Sesión`), y
 sale con código 1 cuando no encuentra nada, como `grep`.
@@ -301,6 +308,7 @@ código está en `protas/integrations/omarchy/german-ds.protas/`.
 
 ## Roadmap
 
-- Resultados de búsqueda dentro de la TUI, navegables.
+- Encabezado del README como el de las herramientas en GitHub: nombre de
+  la herramienta, logo, descripción corta e insignias.
 - Tareas recurrentes, prioridades y estimación de tiempo.
 - Exportación a Markdown (ya disponible) y a Obsidian.

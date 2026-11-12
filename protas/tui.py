@@ -15,11 +15,13 @@ from datetime import date as Date
 from datetime import timedelta
 from typing import Optional
 
+from . import text as text_tools
+from .models import Hit
 from .store import Store, Task, Workspace, check_date, describe_event, today
 
 HELP = (
     "? ayuda | j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
-    "e editar | n nota | x borrar | enter abrir | esc volver | ←/→ dia | "
+    "e editar | n nota | x borrar | / buscar | enter abrir | esc volver | ←/→ dia | "
     "h historia | s numeros | q salir | r actualizar | g/G inicio/fin"
 )
 
@@ -35,6 +37,7 @@ KEYS = (
     ("e", "editar el texto"),
     ("x", "borrar la entrada"),
     ("n", "editar la nota"),
+    ("/", "buscar en tareas, notas, dias y proyectos"),
     ("h", "ver la historia del proyecto"),
     ("s", "ver los numeros"),
     ("r", "actualizar el dia"),
@@ -48,6 +51,31 @@ KEYS = (
 def _help_lines() -> list[str]:
     """Every key and what it does, ready to draw."""
     return [" Teclas", ""] + [f"  {key:<9}  {action}" for key, action in KEYS]
+
+
+SEARCH_HELP = "j/k mover | enter abrir | / buscar otra vez | esc volver | q salir"
+
+HIT_LABELS = {"task": "tarea", "note": "nota", "day": "dia", "project": "proyecto"}
+
+
+class Search:
+    """The results of the last search and the one that is selected."""
+
+    def __init__(self, term: str, hits: list[Hit]):
+        self.term = term
+        self.hits = hits
+        self.selection = 0
+
+
+def _search_lines(hits: list[Hit], term: str) -> list[str]:
+    """One line per result: when, what kind, and the text that matched."""
+    terms = text_tools.terms(term)
+    lines = []
+    for hit in hits:
+        body = hit.text if hit.kind == "task" else text_tools.snippet(hit.text, terms)
+        label = HIT_LABELS.get(hit.kind, hit.kind)
+        lines.append(f" {hit.date:<10}  {label:<8}  {body}")
+    return lines
 
 
 class Editor:
@@ -175,6 +203,7 @@ def _draw(
     message: str,
     editor: Optional[Editor],
     view: str = "tasks",
+    search: Optional[Search] = None,
 ) -> None:
     stdscr.erase()
     height, width = stdscr.getmaxyx()
@@ -198,7 +227,7 @@ def _draw(
         stdscr.hline(2, 0, "-", max(width - 1, 0))
 
     body_top = 3
-    footer = message or HELP
+    footer = message or (SEARCH_HELP if view == "search" else HELP)
     # The footer wraps instead of being cut: on a narrow window the keys
     # that do not fit on the first line keep their own lines, and the body
     # shrinks to make room for them.
@@ -220,6 +249,26 @@ def _draw(
         for index, line in enumerate(_help_lines()[:visible]):
             try:
                 stdscr.addstr(body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width))
+            except curses.error:
+                pass
+    elif visible and view == "search" and search is not None:
+        title = f" Resultados de «{search.term}» ({len(search.hits)})"
+        try:
+            stdscr.addstr(body_top, 0, _clip(title.ljust(max(width - 1, 0)), width), curses.A_BOLD)
+        except curses.error:
+            pass
+        room = max(visible - 2, 0)
+        offset = max(search.selection - room + 1, 0)
+        lines = _search_lines(search.hits, search.term)
+        for index, line in enumerate(lines[offset : offset + room]):
+            attribute = curses.A_REVERSE if index + offset == search.selection else curses.A_NORMAL
+            try:
+                stdscr.addstr(
+                    body_top + 2 + index,
+                    0,
+                    _clip(line.ljust(max(width - 1, 0)), width),
+                    attribute,
+                )
             except curses.error:
                 pass
     elif visible and view == "stats":
@@ -424,6 +473,12 @@ def _editor_key(ch: int | str, editor: Editor) -> str:
     return "continue"
 
 
+def _search_prompt(search: Optional[Search]) -> str:
+    if search is None:
+        return "Buscar: "
+    return f"Buscar (Enter repite «{search.term}»): "
+
+
 def _shift_date(date_str: str, days: int) -> str:
     current = Date.fromisoformat(date_str) + timedelta(days=days)
     return current.strftime("%Y-%m-%d")
@@ -464,6 +519,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
     message = ""
     editor: Optional[Editor] = None
     view = "tasks"
+    search: Optional[Search] = None
 
     while True:
         # The workspace is refreshed every turn: the note and the title can
@@ -478,7 +534,7 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
         if selection < 0:
             selection = 0
 
-        _draw(stdscr, store, workspace, rows, selection, message, editor, view)
+        _draw(stdscr, store, workspace, rows, selection, message, editor, view, search)
         key = _read_key(stdscr)
         if key is None:
             continue
@@ -490,7 +546,17 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 message = ""
             elif action == "submit":
                 try:
-                    if editor.kind == "delete":
+                    if editor.kind == "search":
+                        # An empty search repeats the last one.
+                        term = editor.text() or (search.term if search else "")
+                        hits = store.search(term) if term else []
+                        if hits:
+                            search = Search(term, hits)
+                            view = "search"
+                            message = ""
+                        elif term:
+                            message = f"sin resultados para «{term}»"
+                    elif editor.kind == "delete":
                         store.delete_task(editor.target_id)
                         message = "entrada borrada"
                     elif editor.kind == "edit":
@@ -519,6 +585,47 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
             continue
 
         ch = _command_code(key)
+        if view == "search" and search is not None:
+            # The results take the keys: only moving, opening and leaving.
+            last = len(search.hits) - 1
+            if ch == ord("q"):
+                store.discard_if_empty(current_day.id)
+                return
+            elif ch in (ord("j"), curses.KEY_DOWN):
+                search.selection = min(search.selection + 1, last)
+            elif ch in (ord("k"), curses.KEY_UP):
+                search.selection = max(search.selection - 1, 0)
+            elif ch == ord("g"):
+                search.selection = 0
+            elif ch == ord("G"):
+                search.selection = last
+            elif ch == ord("/"):
+                editor = Editor(_search_prompt(search), "search")
+            elif ch == 27:
+                view = "tasks"
+            elif ch in (10, 13, curses.KEY_ENTER):
+                hit = search.hits[search.selection]
+                target = store.workspace(hit.workspace_id) if hit.workspace_id else None
+                if target is None:
+                    message = "ese resultado ya no existe"
+                else:
+                    if target.is_project:
+                        workspace = target
+                    elif target.id != current_day.id:
+                        left_behind = current_day
+                        current_day = store.open_day(target.date)
+                        store.discard_if_empty(left_behind.id)
+                        workspace = current_day
+                    else:
+                        workspace = current_day
+                    rows = _flatten(store, workspace)
+                    selection = next(
+                        (i for i, (t, _) in enumerate(rows) if t.id == hit.task_id), 0
+                    )
+                    view = "tasks"
+                    message = ""
+            continue
+
         if ch in (ord("q"),):
             store.discard_if_empty(current_day.id)
             return
@@ -581,6 +688,8 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
         elif ch == ord("n"):
             editor = note_editor(store.note(workspace.id))
             view = "tasks"
+        elif ch == ord("/"):
+            editor = Editor(_search_prompt(search), "search")
         elif ch == ord("x"):
             if rows:
                 task, _ = rows[selection]

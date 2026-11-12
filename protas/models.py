@@ -189,3 +189,5 @@ class Hit:
     text: str
     task_id: Optional[int] = None
     score: float = 0.0
+    # The day or project that holds it, so a result can be opened.
+    workspace_id: Optional[int] = None

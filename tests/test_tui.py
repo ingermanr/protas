@@ -468,3 +468,166 @@ class TuiSmokeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TuiSearchTest(unittest.TestCase):
+    """Searching inside the workspace and walking to a result."""
+
+    def setUp(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "protas.db")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def drive(self, steps):
+        """Run the workspace in a pty, typing ``steps`` and reading the screen.
+
+        Returns the exit code and what the screen showed after each step.
+        """
+        import select
+
+        master, slave = pty.openpty()
+        env = dict(os.environ)
+        env["TERM"] = "xterm-256color"
+        env["PYTHONPATH"] = str(REPO_ROOT)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "protas", "--db", self.db, "tui"],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            cwd=str(REPO_ROOT),
+            env=env,
+            close_fds=True,
+        )
+        os.close(slave)
+
+        def screen():
+            data = b""
+            while select.select([master], [], [], 0.5)[0]:
+                data += os.read(master, 65536)
+            return data.decode("utf-8", "replace")
+
+        screens = []
+        try:
+            time.sleep(1.5)
+            screen()
+            for step in steps:
+                os.write(master, step)
+                screens.append(screen())
+            os.write(master, b"q")
+            proc.wait(timeout=15)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+            os.close(master)
+        return proc.returncode, screens
+
+    def test_search_lines_name_the_date_the_kind_and_the_matching_text(self):
+        from protas.models import Hit
+        from protas.tui import _search_lines
+
+        lines = _search_lines(
+            [
+                Hit("task", "2026-03-02", "Calibrar el zorzal", 7),
+                Hit("note", "2026-03-01", "Lunes\nEl zorzal canta temprano"),
+                Hit("project", "", "Zorzal en el jardin"),
+            ],
+            "zorzal",
+        )
+
+        self.assertEqual(len(lines), 3)
+        self.assertIn("2026-03-02", lines[0])
+        self.assertIn("tarea", lines[0])
+        self.assertIn("Calibrar el zorzal", lines[0])
+        self.assertIn("nota", lines[1])
+        self.assertIn("El zorzal canta temprano", lines[1])
+        self.assertNotIn("Lunes", lines[1])
+        self.assertIn("proyecto", lines[2])
+
+    def test_a_result_is_opened_in_its_day_with_the_task_selected(self):
+        from protas.store import Store
+
+        # Finished entries stay in their day: pending ones would be carried
+        # to today and found there too.
+        store = Store(path=self.db)
+        day = store.open_day("2026-03-02")
+        store.set_done(store.add_task("Regar las plantas", day.id).id)
+        target = store.add_task("Calibrar el zorzal", day.id)
+        store.set_done(target.id)
+        store.close()
+
+        # Enter opens the day on the result, so the space reopens that entry.
+        code, screens = self.drive([b"/zorzal\r", b"\r", b" "])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Calibrar el zorzal", screens[0])
+        self.assertIn("2026-03-02", screens[0])
+        self.assertNotIn("Regar las plantas", screens[0])
+        self.assertIn("Regar las plantas", screens[1])
+
+        store = Store(path=self.db)
+        try:
+            done = {task.text: store.is_done(task) for task in store.tasks_of(day.id)}
+            self.assertEqual(
+                done, {"Regar las plantas": True, "Calibrar el zorzal": False}
+            )
+            self.assertFalse(store.is_done(store.task(target.id)))
+        finally:
+            store.close()
+
+    def test_the_results_are_walked_with_the_keys_and_left_with_escape(self):
+        from protas.store import Store, today
+
+        store = Store(path=self.db)
+        first = store.open_day("2026-03-02")
+        store.set_done(store.add_task("Zorzal uno", first.id).id)
+        second = store.open_day("2026-03-05")
+        store.set_done(store.add_task("Zorzal dos", second.id).id)
+        store.add_task("Tarea de hoy", store.open_day().id)
+        store.close()
+
+        # Escape leaves the results: the space lands on today's own entry.
+        code, _ = self.drive([b"/zorzal\r", b"\x1b", b" "])
+        self.assertEqual(code, 0)
+
+        # Results come newest first: j moves to the older one, enter opens it.
+        code, _ = self.drive([b"/zorzal\r", b"j", b"\r", b" "])
+        self.assertEqual(code, 0)
+
+        store = Store(path=self.db)
+        try:
+            state = {
+                task.text: store.is_done(task)
+                for day in (first, second, store.day(today()))
+                for task in store.tasks_of(day.id)
+            }
+            self.assertEqual(
+                state, {"Zorzal uno": False, "Zorzal dos": True, "Tarea de hoy": True}
+            )
+        finally:
+            store.close()
+
+    def test_a_search_without_results_says_so_and_stays_in_the_day(self):
+        code, screens = self.drive([b"/zorzal\r", b"aSigo en el dia\r"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("sin resultados", screens[0])
+
+        from protas.store import Store
+
+        store = Store(path=self.db)
+        try:
+            tasks = store.tasks_of(store.open_day().id)
+            self.assertEqual([task.text for task in tasks], ["Sigo en el dia"])
+        finally:
+            store.close()
+
+    def test_the_help_names_the_search_key(self):
+        from protas.tui import HELP, _help_lines
+
+        self.assertIn("/ buscar", HELP)
+        self.assertTrue(any(line.strip().startswith("/  ") for line in _help_lines()))
+        self.assertLessEqual(len(_help_lines()), 20)

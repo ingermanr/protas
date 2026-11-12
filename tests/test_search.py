@@ -100,6 +100,25 @@ class SearchTest(unittest.TestCase):
         self.assertEqual(dates, sorted(dates, reverse=True))
 
 
+    def test_every_hit_says_which_workspace_holds_it(self):
+        day = self.store.open_day("2026-03-02")
+        task = self.store.add_task("Calibrar el zorzal", day.id)
+        self.store.set_note(day.id, "El zorzal canta temprano")
+        project = self.store.promote(
+            self.store.add_task("Zorzal en el jardin", day.id).id
+        )
+
+        hits = self.store.search("zorzal")
+
+        found = {(hit.kind, hit.workspace_id) for hit in hits}
+        self.assertIn(("task", day.id), found)
+        self.assertIn(("note", day.id), found)
+        self.assertIn(("project", project.id), found)
+        self.assertEqual(
+            [hit.workspace_id for hit in hits if hit.task_id == task.id], [day.id]
+        )
+
+
 class SearchWithoutIndexTest(SearchTest):
     """The search must keep working when SQLite has no FTS5 support."""
 
