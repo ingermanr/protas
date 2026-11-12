@@ -183,5 +183,56 @@ class RolloverTest(unittest.TestCase):
         self.assertEqual(len(mentions), 1)
 
 
+
+class FutureDayTest(unittest.TestCase):
+    """Looking at a day that has not come yet must not move any work."""
+
+    def setUp(self):
+        import tempfile
+        from datetime import date, timedelta
+        from pathlib import Path
+
+        from protas.store import Store
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(path=Path(self.tmp.name) / "protas.db")
+        today = date.today()
+        self.yesterday = (today - timedelta(days=1)).isoformat()
+        self.today = today.isoformat()
+        self.tomorrow = (today + timedelta(days=1)).isoformat()
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_opening_tomorrow_does_not_copy_the_pending_work(self):
+        day = self.store.open_day(self.today)
+        task = self.store.add_task("Hacer hoy", day.id)
+
+        tomorrow = self.store.open_day(self.tomorrow)
+        self.assertEqual(self.store.tasks_of(tomorrow.id), [])
+        self.assertEqual(
+            self.store.conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 1
+        )
+
+        # finished today, it is not waiting tomorrow
+        self.store.set_done(task.id, True)
+        self.assertEqual(self.store.rollover(self.tomorrow), [])
+
+    def test_opening_today_still_brings_the_pending_work(self):
+        day = self.store.ensure_day(self.yesterday)
+        self.store.add_task("Quedo de ayer", day.id)
+
+        today = self.store.open_day(self.today)
+        self.assertEqual([t.text for t in self.store.tasks_of(today.id)], ["Quedo de ayer"])
+
+    def test_an_explicit_rollover_into_tomorrow_still_carries(self):
+        day = self.store.open_day(self.today)
+        self.store.add_task("Para adelantar", day.id)
+
+        carried = self.store.rollover(self.tomorrow)
+        self.assertEqual([self.store.task(i).text for i in carried], ["Para adelantar"])
+
+
 if __name__ == "__main__":
     unittest.main()

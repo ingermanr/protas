@@ -278,10 +278,16 @@ class Store:
         return workspace.note if workspace else ""
 
     def open_day(self, date_str: str | None = None) -> Workspace:
-        """Open a workspace, bringing pending work in when it is today or later."""
+        """Open a day, bringing the pending work in when it is today.
+
+        Only today receives it. A past day is a record, and a future day
+        is only being looked at: copying the pending work there would leave
+        a stale copy behind when the task is finished before that day
+        comes. ``rollover`` still carries into any day on request.
+        """
         date_str = date_str or today()
         day = self.ensure_day(date_str)
-        if date_str >= today():
+        if date_str == today():
             self.rollover(date_str)
         return day
 

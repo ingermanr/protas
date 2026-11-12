@@ -168,6 +168,9 @@ la búsqueda sigue funcionando con un escaneo simple, solo que más lento.
   original se queda donde estaba, así cada día conserva un registro honesto
   de lo que realmente pasó. Un registro de arrastes evita duplicados, y las
   subtareas de un proyecto no se duplican: el día arrastra la mención.
+  El arrastre automático solo ocurre al abrir **hoy**: mirar un día futuro
+  no copia nada. Para adelantar lo pendiente a otro día está
+  `protas roll --to`.
 - **Procedencia**: una entrada arrastrada lo dice: `(de ayer)` o
   `(de 2026-11-08)`. Al abrir el día, lo que quedó sin marcar ayer ya está
   en la agenda de hoy: no hay que importar nada.
