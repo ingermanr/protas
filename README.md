@@ -57,6 +57,10 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `?` | ver todas las teclas en pantalla |
 | `q` | salir |
 
+La línea de ayuda de abajo se reparte en varias líneas cuando la ventana es
+angosta, así que ninguna tecla queda fuera de vista; el cuerpo se achica para
+dejarle lugar.
+
 ### Comandos
 
 ```bash

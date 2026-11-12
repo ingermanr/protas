@@ -139,6 +139,33 @@ def _clip(text: str, width: int) -> str:
     return text[: max(width - 1, 0)]
 
 
+def _footer_lines(text: str, width: int) -> list[str]:
+    """Split the footer into lines that fit ``width``.
+
+    The parts between `` | `` are kept whole: a key binding never breaks
+    across two lines. A single part wider than the window is cut, because
+    there is nothing else to do with it.
+    """
+    room = max(width - 1, 1)
+    lines: list[str] = []
+    current = ""
+    for part in text.split(" | "):
+        candidate = f"{current} | {part}" if current else part
+        if len(candidate) <= room:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        while len(part) > room:
+            lines.append(part[:room])
+            part = part[room:]
+        current = part
+    if current or not lines:
+        lines.append(current)
+    return lines
+
+
 def _draw(
     stdscr,
     store: Store,
@@ -171,8 +198,17 @@ def _draw(
         stdscr.hline(2, 0, "-", max(width - 1, 0))
 
     body_top = 3
-    body_bottom = height - 3
-    visible = max(body_bottom - body_top, 0)
+    footer = message or HELP
+    # The footer wraps instead of being cut: on a narrow window the keys
+    # that do not fit on the first line keep their own lines, and the body
+    # shrinks to make room for them.
+    last_footer_row = height - 2 if editor is not None else height - 1
+    if last_footer_row >= body_top:
+        footer_lines = _footer_lines(footer, width)[: last_footer_row - body_top + 1]
+    else:
+        footer_lines = []
+    footer_start = last_footer_row - len(footer_lines) + 1
+    visible = max(footer_start - body_top, 0)
 
     if visible and view == "history":
         for index, line in enumerate(_history_lines(store, workspace)[:visible]):
@@ -247,10 +283,14 @@ def _draw(
             except curses.error:
                 pass
 
-    footer = message or HELP
-    if height > 1:
+    for index, line in enumerate(footer_lines):
         try:
-            stdscr.addstr(height - 2, 0, _clip(footer.ljust(max(width - 1, 0)), width), curses.A_DIM)
+            stdscr.addstr(
+                footer_start + index,
+                0,
+                _clip(line.ljust(max(width - 1, 0)), width),
+                curses.A_DIM,
+            )
         except curses.error:
             pass
 

@@ -394,6 +394,57 @@ class TuiSmokeTest(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_the_help_line_wraps_instead_of_being_cut_by_a_narrow_window(self):
+        import curses
+
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.store import Store
+        from protas.tui import HELP, _draw
+
+        class Screen:
+            """The part of a curses window that _draw uses."""
+
+            def __init__(self, height, width):
+                self.height = height
+                self.width = width
+                self.rows: dict[int, str] = {}
+
+            def erase(self):
+                self.rows = {}
+
+            def getmaxyx(self):
+                return self.height, self.width
+
+            def addstr(self, y, x, text, *attributes):
+                if y == self.height - 1 and x + len(text) >= self.width:
+                    raise curses.error("writing the bottom right corner")
+                self.rows[y] = self.rows.get(y, "")[:x].ljust(x) + text
+
+            def hline(self, y, x, character, count):
+                self.addstr(y, x, character * count)
+
+            def refresh(self):
+                pass
+
+            def text(self):
+                return "\n".join(line.rstrip() for line in self.rows.values())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(path=Path(tmp) / "protas.db")
+            try:
+                day = store.open_day("2026-11-11")
+                for width in (60, 40, 24):
+                    screen = Screen(height=24, width=width)
+                    _draw(screen, store, day, [], 0, "", None)
+
+                    drawn = screen.text()
+                    for segment in HELP.split(" | "):
+                        self.assertIn(segment, drawn, f"{segment!r} is missing at width {width}")
+                    for line in screen.rows.values():
+                        self.assertLessEqual(len(line), width - 1)
+            finally:
+                store.close()
+
     def test_the_note_of_the_day_is_drawn_above_the_entries(self):
         sys.path.insert(0, str(REPO_ROOT))
         from protas.store import Store
