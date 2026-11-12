@@ -9,6 +9,8 @@ leaves the terminal, so it stays fast on any machine.
 from __future__ import annotations
 
 import curses
+import sys
+import termios
 from datetime import date as Date
 from datetime import timedelta
 from typing import Optional
@@ -39,7 +41,9 @@ class Editor:
         self.parent_id = parent_id
         self.workspace_id = workspace_id
         self.buffer = ""
+        # The note is edited line by line: ``row`` is the line being typed.
         self.lines: list[str] = []
+        self.row = 0
 
     @property
     def is_note(self) -> bool:
@@ -47,8 +51,49 @@ class Editor:
 
     def text(self) -> str:
         if self.is_note:
-            return "\n".join(self.lines)
+            return "\n".join(self.lines).rstrip("\n")
         return self.buffer.strip()
+
+
+NOTE_PROMPT = "Nota: ↑/↓ linea | Enter nueva linea | Ctrl-S guardar | Esc cancelar"
+
+
+def note_editor(note: str) -> Editor:
+    """An editor holding a note, placed at the end of its last line."""
+    editor = Editor(NOTE_PROMPT, "note")
+    editor.lines = note.splitlines() or [""]
+    editor.row = len(editor.lines) - 1
+    return editor
+
+
+def _note_key(ch: int, editor: Editor) -> str:
+    """Feed a special key to the note editor."""
+    if ch == curses.KEY_UP:
+        editor.row = max(editor.row - 1, 0)
+    elif ch == curses.KEY_DOWN:
+        editor.row = min(editor.row + 1, len(editor.lines) - 1)
+    elif ch in (curses.KEY_BACKSPACE, 127, 8):
+        if editor.lines[editor.row]:
+            editor.lines[editor.row] = editor.lines[editor.row][:-1]
+        elif editor.row > 0:
+            # An empty line goes away and the one above becomes current.
+            del editor.lines[editor.row]
+            editor.row -= 1
+    elif ch in (10, 13, curses.KEY_ENTER):
+        editor.row += 1
+        editor.lines.insert(editor.row, "")
+    return "continue"
+
+
+def _draft_lines(editor: Editor) -> list[tuple[str, bool]]:
+    """The note being edited, ready to draw, marking the current line."""
+    drawn: list[tuple[str, bool]] = []
+    for index, line in enumerate(editor.lines):
+        if index == editor.row:
+            drawn.append((f" > {line}_", True))
+        else:
+            drawn.append((f"   {line}", False))
+    return drawn
 
 
 def _flatten(store: Store, workspace: Workspace) -> list[tuple[Task, int]]:
@@ -113,6 +158,21 @@ def _draw(
         for index, line in enumerate(_stats_lines(store)[:visible]):
             try:
                 stdscr.addstr(body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width))
+            except curses.error:
+                pass
+    elif visible and editor is not None and editor.is_note:
+        # While the note is open the body shows the draft, scrolled so the
+        # line being edited stays on screen.
+        draft = _draft_lines(editor)
+        offset = max(editor.row - visible + 1, 0)
+        for index, (line, current) in enumerate(draft[offset : offset + visible]):
+            try:
+                stdscr.addstr(
+                    body_top + index,
+                    0,
+                    _clip(line.ljust(max(width - 1, 0)), width),
+                    curses.A_BOLD if current else curses.A_NORMAL,
+                )
             except curses.error:
                 pass
     elif visible:
@@ -263,25 +323,32 @@ def _editor_key(ch: int | str, editor: Editor) -> str:
     """
     if isinstance(ch, str):
         if ch.isprintable():
-            editor.buffer += ch
-            return "continue"
-        ch = ord(ch)
+            ch_text = ch
+            ch = -1
+        else:
+            ch_text = ""
+            ch = ord(ch)
+    else:
+        ch_text = chr(ch) if 32 <= ch < 127 else ""
+
+    if ch_text:
+        if editor.is_note:
+            editor.lines[editor.row] += ch_text
+        else:
+            editor.buffer += ch_text
+        return "continue"
 
     if ch == 27:
         return "cancel"
     if ch == 19:  # Ctrl-S
         return "save"
+    if editor.is_note:
+        return _note_key(ch, editor)
     if ch in (curses.KEY_BACKSPACE, 127, 8):
         editor.buffer = editor.buffer[:-1]
         return "continue"
     if ch in (10, 13, curses.KEY_ENTER):
-        if editor.is_note:
-            editor.lines.append(editor.buffer)
-            editor.buffer = ""
-            return "continue"
         return "submit"
-    if 32 <= ch < 127:
-        editor.buffer += chr(ch)
     return "continue"
 
 
@@ -290,9 +357,27 @@ def _shift_date(date_str: str, days: int) -> str:
     return current.strftime("%Y-%m-%d")
 
 
+def _release_ctrl_s() -> None:
+    """Let Ctrl-S reach the application.
+
+    Terminals keep Ctrl-S for themselves by default: it pauses the output
+    and the key never arrives, so the note could not be saved. Curses
+    restores the terminal as it was when the workspace is closed.
+    """
+    try:
+        fd = sys.stdin.fileno()
+        attributes = termios.tcgetattr(fd)
+        attributes[0] &= ~termios.IXON
+        termios.tcsetattr(fd, termios.TCSANOW, attributes)
+        curses.def_prog_mode()
+    except (termios.error, curses.error, OSError, ValueError):
+        pass
+
+
 def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> None:
     curses.curs_set(0)
     stdscr.keypad(True)
+    _release_ctrl_s()
 
     origin_day = store.open_day(date_str)
     current_day = origin_day
@@ -421,8 +506,8 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
             else:
                 message = "no hay ninguna entrada que editar"
         elif ch == ord("n"):
-            editor = Editor("Nota (Enter = nueva linea, Ctrl-S = guardar): ", "note")
-            editor.lines = store.note(workspace.id).splitlines()
+            editor = note_editor(store.note(workspace.id))
+            view = "tasks"
         elif ch == ord("x"):
             if rows:
                 task, _ = rows[selection]

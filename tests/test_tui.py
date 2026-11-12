@@ -158,6 +158,121 @@ class TuiSmokeTest(unittest.TestCase):
         # the day is changed with the arrows, not with < and >
         self.assertNotIn("< >", HELP)
 
+    def test_the_note_editor_edits_any_line(self):
+        import curses
+
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.tui import _editor_key, note_editor
+
+        editor = note_editor("uno\ndos\ntres")
+        self.assertEqual((editor.lines, editor.row), (["uno", "dos", "tres"], 2))
+
+        # the current line is edited at its end
+        _editor_key("!", editor)
+        self.assertEqual(editor.lines, ["uno", "dos", "tres!"])
+
+        # the arrows walk the lines and stop at the edges
+        for _ in range(5):
+            self.assertEqual(_editor_key(curses.KEY_UP, editor), "continue")
+        self.assertEqual(editor.row, 0)
+        _editor_key(127, editor)
+        _editor_key("a", editor)
+        self.assertEqual(editor.lines, ["una", "dos", "tres!"])
+        for _ in range(5):
+            _editor_key(curses.KEY_DOWN, editor)
+        self.assertEqual(editor.row, 2)
+
+        # enter opens a line below the current one
+        _editor_key(curses.KEY_UP, editor)
+        self.assertEqual(_editor_key("\n", editor), "continue")
+        self.assertEqual((editor.lines, editor.row), (["una", "dos", "", "tres!"], 2))
+        _editor_key("x", editor)
+
+        # backspace empties a line and then removes it
+        _editor_key(127, editor)
+        _editor_key(127, editor)
+        self.assertEqual((editor.lines, editor.row), (["una", "dos", "tres!"], 1))
+
+        # the first line is never removed, only emptied
+        _editor_key(curses.KEY_UP, editor)
+        for _ in range(6):
+            _editor_key(127, editor)
+        self.assertEqual((editor.lines, editor.row), (["", "dos", "tres!"], 0))
+
+        self.assertEqual(_editor_key("\x13", editor), "save")
+        self.assertEqual(editor.text(), "\ndos\ntres!")
+        self.assertEqual(_editor_key("\x1b", editor), "cancel")
+
+    def test_the_line_being_typed_is_part_of_the_saved_note(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.tui import _editor_key, note_editor
+
+        editor = note_editor("")
+        self.assertEqual((editor.lines, editor.row), ([""], 0))
+        for char in "sin enter":
+            _editor_key(char, editor)
+
+        self.assertEqual(editor.text(), "sin enter")
+
+        # blank lines left at the end are not saved
+        _editor_key("\n", editor)
+        _editor_key("\n", editor)
+        self.assertEqual(editor.text(), "sin enter")
+
+    def test_the_draft_of_the_note_shows_the_line_being_edited(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.tui import _draft_lines, note_editor
+
+        editor = note_editor("uno\ndos")
+        self.assertEqual(_draft_lines(editor), [("   uno", False), (" > dos_", True)])
+
+    def test_an_existing_note_is_edited_in_the_workspace(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.store import Store
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = str(Path(tmp) / "protas.db")
+            store = Store(path=db)
+            day = store.open_day()
+            store.set_note(day.id, "uno\ndos")
+            store.close()
+
+            master, slave = pty.openpty()
+            env = dict(os.environ)
+            env["TERM"] = "xterm-256color"
+            env["PYTHONPATH"] = str(REPO_ROOT)
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "protas", "--db", db, "tui"],
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                cwd=str(REPO_ROOT),
+                env=env,
+                close_fds=True,
+            )
+            os.close(slave)
+
+            try:
+                time.sleep(1.5)
+                # open the note, go up one line, fix it, add a line, save
+                for chunk in (b"n", b"\x1bOA", b"!", b"\r", b"medio", b"\x13", b"q"):
+                    os.write(master, chunk)
+                    time.sleep(0.4)
+                proc.wait(timeout=15)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                os.close(master)
+
+            self.assertEqual(proc.returncode, 0)
+
+            store = Store(path=db)
+            try:
+                self.assertEqual(store.note(store.open_day().id), "uno!\nmedio\ndos")
+            finally:
+                store.close()
+
     def test_the_note_of_the_day_is_drawn_above_the_entries(self):
         sys.path.insert(0, str(REPO_ROOT))
         from protas.store import Store

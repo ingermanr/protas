@@ -45,7 +45,7 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `A` | nueva subtarea (promueve la tarea a proyecto si hace falta) |
 | `p` | promover la tarea a proyecto |
 | `e` | editar el texto |
-| `n` | editar la nota del espacio de trabajo |
+| `n` | editar la nota: `↑`/`↓` cambian de línea, `Enter` abre una línea, `Ctrl-S` guarda, `Esc` cancela |
 | `x` | borrar la entrada |
 | `enter` | abrir el proyecto de una mención |
 | `h` | ver la historia del proyecto |
