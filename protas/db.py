@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+import stat
 import tempfile
 from pathlib import Path
 
@@ -312,6 +313,9 @@ def _backup_legacy(conn: sqlite3.Connection, path: Path) -> Path:
     partial = Path(name)
     try:
         _write_copy(conn, partial)
+        # The temporary file is private; the copy gets the permissions of
+        # the database it is a copy of.
+        os.chmod(partial, stat.S_IMODE(os.stat(path).st_mode))
         if _file_fingerprint(partial) != wanted:
             raise OSError(f"the copy written to {backup} does not match the database")
         try:
@@ -444,18 +448,18 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     id_map: dict[int, int] = {}
     for task in task_rows:
         project_id = project_workspace.get(task["id"])
+        # Every task must belong to a real day, wherever it ends up.
+        day_id = day_of(task)
 
         if project_id is not None:
             # The task itself stays in its day as a mention of the project.
-            workspace_id = day_of(task)
+            workspace_id = day_id
         elif task["parent_id"] is not None:
             # Children move inside the workspace of their project.
             root = top_ancestor(task)
-            workspace_id = project_workspace.get(root["id"])
-            if workspace_id is None:
-                workspace_id = day_of(task)
+            workspace_id = project_workspace.get(root["id"], day_id)
         else:
-            workspace_id = day_of(task)
+            workspace_id = day_id
 
         cursor = conn.execute(
             """INSERT INTO tasks

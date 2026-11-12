@@ -478,6 +478,29 @@ class BackupTest(unittest.TestCase):
         self.assertIn("task 4 belongs to day 99, which does not exist", str(raised.exception))
         self.assertEqual(_legacy_rows(self.db), before)
 
+    def test_a_project_subtask_of_a_missing_day_is_named_too(self):
+        conn = sqlite3.connect(str(self.db))
+        conn.execute("UPDATE tasks SET day_id = 42 WHERE id = 3")
+        conn.commit()
+        conn.close()
+        before = _legacy_rows(self.db)
+
+        with self.assertRaises(self.db_module.MigrationError) as raised:
+            Store(path=self.db)
+
+        self.assertIn("task 3 belongs to day 42, which does not exist", str(raised.exception))
+        self.assertEqual(_legacy_rows(self.db), before)
+
+    def test_the_copy_has_the_permissions_of_the_database(self):
+        import os
+        import stat
+
+        os.chmod(self.db, 0o640)
+        Store(path=self.db).close()
+
+        backup = self.dir / "legacy.db.before-workspaces.bak"
+        self.assertEqual(stat.S_IMODE(backup.stat().st_mode), 0o640)
+
     def test_a_database_migrated_by_someone_else_meanwhile_is_left_alone(self):
         from unittest import mock
 
