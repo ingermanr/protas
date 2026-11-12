@@ -29,6 +29,13 @@ Preguntas abiertas:
 
 ## Decisiones ya tomadas (que hay que respetar)
 
+- La migración de días a workspaces es todo o nada: corre en una sola
+  transacción y, si falla, la base queda como estaba y la app sale con
+  `protas: could not migrate ...` (responde S3 para esta migración).
+- Antes de esa migración se guarda una copia junto a la base:
+  `<base>.before-workspaces.bak`. Si ya existe no se pisa (responde S2
+  para esta migración; falta decidir la regla general y la limpieza).
+
 - La base es un archivo SQLite en `~/.local/share/protas/protas.db`
   (XDG). Nunca dentro del repo.
 - `PROTAS_DB` y `--db` permiten apuntar a otra base (tests, demos).

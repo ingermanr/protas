@@ -182,6 +182,13 @@ anidarse dentro de otro proyecto.
 python3 -m unittest discover -s tests
 ```
 
+## Actualizar una base antigua
+
+Una base creada antes de los workspaces se migra sola al abrirla. Antes
+de tocarla se guarda una copia al lado, `protas.db.before-workspaces.bak`,
+y la migración es todo o nada: si falla, la base queda como estaba y
+`protas` avisa por la salida de error.
+
 ## Roadmap
 
 - **Actualizaciones**: qué pasa cuando la app cambia de versión y el

@@ -193,27 +193,111 @@ def _index_is_consistent(conn: sqlite3.Connection) -> bool:
         return False
 
 
-def _prepare_legacy(conn: sqlite3.Connection) -> None:
-    """Move the old tables aside so the new ones can be created clean.
+class MigrationError(RuntimeError):
+    """An older database could not be brought to the current schema."""
 
-    The old schema used ``days``, ``tasks`` and ``carries``; the new one
-    uses ``workspaces``, ``tasks`` and ``carries``. Renaming first avoids
-    mixing two different shapes under the same name.
+
+# The old schema used ``days``, ``tasks`` and ``carries``; the new one uses
+# ``workspaces``, ``tasks`` and ``carries``. Renaming first avoids mixing
+# two different shapes under the same name.
+LEGACY_RENAME = """
+ALTER TABLE days RENAME TO days_v1;
+ALTER TABLE tasks RENAME TO tasks_v1;
+ALTER TABLE carries RENAME TO carries_v1;
+DROP TRIGGER IF EXISTS tasks_fts_insert;
+DROP TRIGGER IF EXISTS tasks_fts_delete;
+DROP TRIGGER IF EXISTS tasks_fts_update;
+DROP TRIGGER IF EXISTS days_fts_insert;
+DROP TRIGGER IF EXISTS days_fts_delete;
+DROP TRIGGER IF EXISTS days_fts_update;
+"""
+
+# The children go first: a table that still points to a dropped one makes
+# SQLite fail while reparsing the schema.
+LEGACY_DROP = """
+DROP TABLE IF EXISTS carries_v1;
+DROP TABLE IF EXISTS tasks_v1;
+DROP TABLE IF EXISTS days_v1;
+"""
+
+
+def _statements(script: str) -> list[str]:
+    """Split a script into statements.
+
+    ``executescript`` commits whatever is open, so a script that must run
+    inside a transaction is executed one statement at a time instead.
     """
-    conn.executescript(
-        """
-        ALTER TABLE days RENAME TO days_v1;
-        ALTER TABLE tasks RENAME TO tasks_v1;
-        ALTER TABLE carries RENAME TO carries_v1;
-        DROP TRIGGER IF EXISTS tasks_fts_insert;
-        DROP TRIGGER IF EXISTS tasks_fts_delete;
-        DROP TRIGGER IF EXISTS tasks_fts_update;
-        DROP TRIGGER IF EXISTS days_fts_insert;
-        DROP TRIGGER IF EXISTS days_fts_delete;
-        DROP TRIGGER IF EXISTS days_fts_update;
-        """
-    )
-    conn.commit()
+    statements: list[str] = []
+    current = ""
+    for line in script.splitlines():
+        current += line + "\n"
+        if sqlite3.complete_statement(current):
+            statements.append(current)
+            current = ""
+    if current.strip():
+        statements.append(current)
+    return statements
+
+
+def legacy_backup_path(path: Path) -> Path:
+    """Where the copy of a database from before the workspaces is kept."""
+    return path.with_name(path.name + ".before-workspaces.bak")
+
+
+def _backup_legacy(conn: sqlite3.Connection, path: Path) -> Path:
+    """Copy the old database aside before touching it.
+
+    An existing copy is never replaced: it is the oldest one, taken before
+    any attempt to migrate.
+    """
+    backup = legacy_backup_path(path)
+    if backup.exists():
+        return backup
+
+    partial = backup.with_name(backup.name + ".partial")
+    partial.unlink(missing_ok=True)
+    copy = sqlite3.connect(str(partial))
+    try:
+        conn.backup(copy)
+    finally:
+        copy.close()
+    partial.replace(backup)
+    return backup
+
+
+def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> None:
+    """Move a database from days to workspaces, all or nothing.
+
+    The whole move runs in one transaction: when any step fails the file
+    keeps its old shape, so the next start can try again.
+    """
+    try:
+        backup = _backup_legacy(conn, path)
+    except (OSError, sqlite3.Error) as error:
+        raise MigrationError(
+            f"could not copy {path} before migrating it: {error}. "
+            "The database was left untouched."
+        ) from error
+
+    isolation_level = conn.isolation_level
+    conn.isolation_level = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for statement in _statements(LEGACY_RENAME + SCHEMA):
+            conn.execute(statement)
+        _migrate_v2(conn)
+        for statement in _statements(LEGACY_DROP):
+            conn.execute(statement)
+        conn.execute("COMMIT")
+    except Exception as error:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise MigrationError(
+            f"could not migrate {path}: {error}. "
+            f"The database was left untouched and a copy is kept at {backup}."
+        ) from error
+    finally:
+        conn.isolation_level = isolation_level
 
 
 def _migrate_v2(conn: sqlite3.Connection) -> None:
@@ -221,6 +305,8 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
 
     Every day becomes a workspace of kind ``day`` and every task that owned
     children becomes a project workspace with those children inside.
+
+    It runs inside the transaction of ``_migrate_legacy`` and never commits.
     """
     day_rows = conn.execute("SELECT * FROM days_v1 ORDER BY id").fetchall()
     task_rows = conn.execute("SELECT * FROM tasks_v1 ORDER BY id").fetchall()
@@ -249,10 +335,10 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
         return current
 
     # A top level task with children becomes a project workspace.
+    parents = {task["parent_id"] for task in task_rows if task["parent_id"] is not None}
     project_workspace: dict[int, int] = {}
     for task in task_rows:
-        has_children = any(other["parent_id"] == task["id"] for other in task_rows)
-        if has_children and task["parent_id"] is None:
+        if task["id"] in parents and task["parent_id"] is None:
             cursor = conn.execute(
                 """INSERT INTO workspaces (kind, title, date, note, parent_id, created_at)
                    VALUES ('project', ?, NULL, '', NULL, ?)""",
@@ -263,7 +349,6 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     id_map: dict[int, int] = {}
     for task in task_rows:
         project_id = project_workspace.get(task["id"])
-        parent_id = None
 
         if project_id is not None:
             # The task itself stays in its day as a mention of the project.
@@ -274,7 +359,6 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
             workspace_id = project_workspace.get(
                 root["id"], day_workspace[task["day_id"]]
             )
-            parent_id = task["parent_id"]
         else:
             workspace_id = day_workspace[task["day_id"]]
 
@@ -282,11 +366,10 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
             """INSERT INTO tasks
                (workspace_id, project_id, parent_id, text, done, done_at, origin_id,
                 position, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)""",
+               VALUES (?, ?, NULL, ?, ?, ?, NULL, ?, ?)""",
             (
                 workspace_id,
                 project_id,
-                parent_id,
                 task["text"],
                 task["done"],
                 task["done_at"],
@@ -296,20 +379,30 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
         )
         id_map[task["id"]] = cursor.lastrowid
 
+    # The ids changed, so every link between tasks is rewritten with the
+    # new ones once all the rows exist.
     for task in task_rows:
-        if task["origin_id"] is None or task["origin_id"] not in id_map:
-            continue
-        conn.execute(
-            "UPDATE tasks SET origin_id = ? WHERE id = ?",
-            (id_map[task["origin_id"]], id_map[task["id"]]),
-        )
+        if task["origin_id"] in id_map:
+            conn.execute(
+                "UPDATE tasks SET origin_id = ? WHERE id = ?",
+                (id_map[task["origin_id"]], id_map[task["id"]]),
+            )
+
+        # The children of a project hang from its workspace, not from the
+        # mention the day keeps: deleting the mention must not take them.
+        parent_id = task["parent_id"]
+        if parent_id in id_map and parent_id not in project_workspace:
+            conn.execute(
+                "UPDATE tasks SET parent_id = ? WHERE id = ?",
+                (id_map[parent_id], id_map[task["id"]]),
+            )
 
     for carry in carry_rows:
         origin_id = id_map.get(carry["origin_id"])
         if origin_id is None:
             continue
-        origin = next(task for task in task_rows if task["id"] == carry["origin_id"])
-        workspace_id = day_workspace.get(origin["day_id"])
+        # The ledger records the day that received the task.
+        workspace_id = day_workspace.get(carry["day_id"])
         if workspace_id is None:
             continue
         conn.execute(
@@ -317,17 +410,6 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
             "VALUES (?, ?, ?)",
             (origin_id, workspace_id, carry["created_at"]),
         )
-
-    # The children go first: a table that still points to a dropped one
-    # makes SQLite fail while reparsing the schema.
-    conn.executescript(
-        """
-        DROP TABLE IF EXISTS carries_v1;
-        DROP TABLE IF EXISTS tasks_v1;
-        DROP TABLE IF EXISTS days_v1;
-        """
-    )
-    conn.commit()
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -356,12 +438,13 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
 
     legacy = _table_exists(conn, "days") and not _table_exists(conn, "workspaces")
     if legacy:
-        _prepare_legacy(conn)
+        try:
+            _migrate_legacy(conn, target)
+        except MigrationError:
+            conn.close()
+            raise
 
     conn.executescript(SCHEMA)
-
-    if legacy:
-        _migrate_v2(conn)
 
     _migrate(conn)
 

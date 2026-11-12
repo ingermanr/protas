@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from . import text
+from .db import MigrationError
 from .store import Store, Task, Workspace, describe_event, today
 
 
@@ -529,7 +530,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    store = Store(path=args.db)
+    try:
+        store = Store(path=args.db)
+    except MigrationError as error:
+        print(f"protas: {error}", file=sys.stderr)
+        return 1
 
     try:
         if args.command == "tui":
