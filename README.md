@@ -79,6 +79,7 @@ protas history 3               # la historia del proyecto
 protas export --out ./protas-export
 protas version                 # versión de protas y de su esquema
 protas doctor                  # revisa la base sin cambiarla
+protas omarchy install         # instala o actualiza el panel de Omarchy
 ```
 
 Las fechas se escriben como `AAAA-MM-DD`. Cualquier otra cosa se rechaza
@@ -273,31 +274,33 @@ transacción y no debe hacer `commit` ni usar `executescript`.
 
 ## Panel de Omarchy
 
-`integrations/omarchy/german-ds.protas/` es un widget para la barra de
-Omarchy: muestra cuántas entradas quedan pendientes hoy y, al abrirlo, la
-agenda del día con su nota y el avance de los proyectos mencionados.
-Un clic en una entrada la completa o la reabre (`protas done` /
-`protas undone`). Las menciones de proyecto no responden al clic:
-completar una completa el proyecto entero, y eso se hace desde la TUI.
+protas trae un widget opcional para la barra de Omarchy: muestra cuántas
+entradas quedan pendientes hoy y, al abrirlo, la agenda del día con su
+nota y el avance de los proyectos mencionados. Un clic en una entrada la
+completa o la reabre (`protas done` / `protas undone`). Las menciones de
+proyecto no responden al clic: completar una completa el proyecto entero,
+y eso se hace desde la TUI.
+
+protas funciona igual sin el panel. Si usas Omarchy y lo quieres:
 
 ```bash
-cp -r integrations/omarchy/german-ds.protas ~/.config/omarchy/plugins/
-omarchy plugin validate ~/.config/omarchy/plugins/german-ds.protas
-omarchy plugin enable german-ds.protas
+protas omarchy install
 ```
 
-Para actualizarlo, copia de nuevo la carpeta y reinicia la barra con
-`omarchy restart shell`: la recarga automática no reemplaza el panel que
-ya estaba en memoria.
+El comando copia el panel a `~/.config/omarchy/plugins/german-ds.protas`,
+le pide a Omarchy que lo valide y lo active, y reinicia la barra. Sirve
+también para actualizarlo: reemplaza la copia anterior, y el reinicio es
+necesario porque la barra no suelta el panel que ya tenía en memoria. Con
+`--no-restart` deja la barra como está y te dice cómo reiniciarla después.
 
-Espera el comando en `~/.local/bin/protas`. El intervalo de refresco
-(60 s por defecto) se ajusta en la configuración del widget.
+Para quitarlo: `omarchy plugin remove german-ds.protas`.
+
+El panel espera el comando en `~/.local/bin/protas`. El intervalo de
+refresco (60 s por defecto) se ajusta en la configuración del widget. Su
+código está en `protas/integrations/omarchy/german-ds.protas/`.
 
 ## Roadmap
 
-- Instalación del panel de Omarchy: decidir si protas la ofrece como paso
-  opcional (desde la TUI o un comando) o si sigue siendo un complemento
-  aparte que se instala a mano con la guía de arriba.
 - Resultados de búsqueda dentro de la TUI, navegables.
 - Tareas recurrentes, prioridades y estimación de tiempo.
 - Exportación a Markdown (ya disponible) y a Obsidian.

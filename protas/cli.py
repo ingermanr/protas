@@ -94,6 +94,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("version", help="print the version of protas and of its schema")
     sub.add_parser("doctor", help="check the database without changing it")
 
+    omarchy = sub.add_parser("omarchy", help="manage the Omarchy bar panel")
+    omarchy_sub = omarchy.add_subparsers(dest="omarchy_command", required=True)
+    install = omarchy_sub.add_parser(
+        "install", help="install or update the panel in the Omarchy bar"
+    )
+    install.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="do not restart the bar after installing",
+    )
+
     search = sub.add_parser("search", help="search tasks, notes and workspaces")
     search.add_argument(
         "term",
@@ -190,6 +201,19 @@ def _workspace_for(store: Store, args) -> Workspace:
 def _notice(message: str) -> None:
     """Things the user should know that are not the answer to the command."""
     print(f"protas: {message}", file=sys.stderr)
+
+
+def cmd_omarchy(args) -> int:
+    from . import omarchy
+
+    try:
+        report = omarchy.install(restart=not args.no_restart)
+    except omarchy.OmarchyError as error:
+        print(f"protas: {error}", file=sys.stderr)
+        return 1
+    for line in report:
+        print(line)
+    return 0
 
 
 def cmd_doctor(args) -> int:
@@ -647,6 +671,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "doctor":
         return cmd_doctor(args)
+    # The panel is installed around protas, not in it: no database needed.
+    if args.command == "omarchy":
+        return cmd_omarchy(args)
 
     try:
         store = Store(path=args.db, notify=_notice)
