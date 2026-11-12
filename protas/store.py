@@ -22,12 +22,12 @@ Core concepts
 from __future__ import annotations
 
 import sqlite3
-from collections import defaultdict
 from datetime import date as Date
 from datetime import timedelta
 from pathlib import Path
 from typing import Optional
 
+from . import rules
 from .db import connect, fts5_available
 # Re-exported: the store stays the door the rest of the program uses.
 from .models import (  # noqa: F401
@@ -322,15 +322,9 @@ class Store:
         rows = self.conn.execute(
             "SELECT done, project_id FROM tasks WHERE workspace_id = ?", (project_id,)
         ).fetchall()
-        total = len(rows)
-        done = 0
-        for row in rows:
-            inner = row["project_id"]
-            if inner is not None and inner not in seen:
-                done += 1 if self.project_is_done(inner, seen) else 0
-            elif row["done"]:
-                done += 1
-        return {"total": total, "done": done, "open": total - done}
+        return rules.project_counts(
+            rows, seen, lambda inner: self.project_is_done(inner, seen)
+        )
 
     def project_is_done(self, project_id: int, _seen: frozenset[int] = frozenset()) -> bool:
         """The live state of a project.
@@ -339,13 +333,12 @@ class Store:
         without tasks has nothing to derive its state from, so it keeps it
         on the entries that mention it, like a plain task would.
         """
-        state = self.project_state(project_id, _seen)
-        if state["total"] == 0:
-            row = self.conn.execute(
-                "SELECT 1 FROM tasks WHERE project_id = ? AND done = 1", (project_id,)
-            ).fetchone()
-            return row is not None
-        return state["open"] == 0
+        mentioned_done = self.conn.execute(
+            "SELECT 1 FROM tasks WHERE project_id = ? AND done = 1", (project_id,)
+        ).fetchone()
+        return rules.project_is_done(
+            self.project_state(project_id, _seen), mentioned_done is not None
+        )
 
     def set_done(self, task_id: int, done: bool = True, day_id: int | None = None) -> Task:
         """Complete or reopen an entry.
@@ -635,30 +628,8 @@ class Store:
         if not rows:
             return []
 
-        by_id = {row["id"]: row for row in rows}
-        descendants: dict[int, list[sqlite3.Row]] = defaultdict(list)
-        for row in rows:
-            if row["origin_id"] is not None:
-                descendants[row["origin_id"]].append(row)
-
-        def newest_in_lineage(task_id: int) -> sqlite3.Row:
-            newest = by_id[task_id]
-            seen = {task_id}
-            frontier = [task_id]
-            while frontier:
-                current = frontier.pop()
-                for child in descendants.get(current, []):
-                    if child["id"] in seen:
-                        continue
-                    seen.add(child["id"])
-                    frontier.append(child["id"])
-                    if (child["day_date"], child["id"]) > (newest["day_date"], newest["id"]):
-                        newest = child
-            return newest
-
         carried: list[int] = []
-        for row in rows:
-            source = newest_in_lineage(row["id"])
+        for source in rules.lineage_heads(rows):
             if self._entry_is_done(source):
                 continue
             if self._already_carried(source["id"], target_workspace.id):
