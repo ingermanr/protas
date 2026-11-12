@@ -55,7 +55,7 @@ protas              # abre el espacio de trabajo de hoy en la TUI
 protas show         # imprime el espacio de trabajo de hoy
 protas show 2026-11-10
 protas show --project 3
-protas tui --date 2026-11-10    # abre la TUI en otro día
+protas tui 2026-11-10           # abre la TUI en otro día
 protas tui --project 3          # abre la TUI en un proyecto
 ```
 
