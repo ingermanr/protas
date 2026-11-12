@@ -201,7 +201,9 @@ python3 -m unittest discover -s tests
 ## Actualizar una base antigua
 
 Una base creada antes de los workspaces se migra sola al abrirla. Antes
-de tocarla se guarda una copia al lado, `protas.db.before-workspaces.bak`,
+de tocarla se guarda una copia al lado, `protas.db.before-workspaces.bak`
+(si ese nombre ya lo ocupa otra base, la copia nueva lleva número:
+`.before-workspaces.2.bak`),
 y la migración es todo o nada: si falla, la base queda como estaba y
 `protas` avisa por la salida de error.
 

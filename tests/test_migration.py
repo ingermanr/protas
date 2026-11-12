@@ -319,5 +319,220 @@ class LivedInMigrationTest(unittest.TestCase):
             self.assertEqual([path.name for path in Path(tmp).iterdir()], ["new.db"])
 
 
+
+def _legacy_rows(db: Path) -> list:
+    conn = sqlite3.connect(str(db))
+    try:
+        return [
+            conn.execute(f"SELECT * FROM {table} ORDER BY 1, 2").fetchall()
+            for table in ("days", "tasks", "carries")
+        ]
+    finally:
+        conn.close()
+
+
+class BackupTest(unittest.TestCase):
+    """The copy taken before migrating is the database being migrated."""
+
+    def setUp(self):
+        from protas import db as db_module
+
+        self.db_module = db_module
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.db = self.dir / "legacy.db"
+        _create(self.db, LEGACY_SCHEMA)
+        self.before = _legacy_rows(self.db)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def names(self):
+        return sorted(path.name for path in self.dir.iterdir())
+
+    def fail_migration(self, error=None):
+        from unittest import mock
+
+        with mock.patch(
+            "protas.db._migrate_v2", side_effect=error or sqlite3.IntegrityError("boom")
+        ):
+            with self.assertRaises(self.db_module.MigrationError) as raised:
+                Store(path=self.db)
+        return str(raised.exception)
+
+    def test_an_old_copy_of_another_database_is_not_taken_as_the_copy(self):
+        stale = self.dir / "legacy.db.before-workspaces.bak"
+        _create(stale, LIVED_IN_SCHEMA)
+        stale_rows = _legacy_rows(stale)
+
+        Store(path=self.db).close()
+
+        fresh = self.dir / "legacy.db.before-workspaces.2.bak"
+        self.assertEqual(self.names(), sorted(["legacy.db", stale.name, fresh.name]))
+        self.assertEqual(_legacy_rows(fresh), self.before)
+        # the old copy is somebody's data: it is left alone
+        self.assertEqual(_legacy_rows(stale), stale_rows)
+
+    def test_a_retry_reuses_the_copy_it_already_took(self):
+        message = self.fail_migration()
+        self.assertIn("legacy.db.before-workspaces.bak", message)
+        self.fail_migration()
+        Store(path=self.db).close()
+
+        self.assertEqual(self.names(), ["legacy.db", "legacy.db.before-workspaces.bak"])
+        self.assertEqual(
+            _legacy_rows(self.dir / "legacy.db.before-workspaces.bak"), self.before
+        )
+
+    def test_a_copy_that_cannot_be_read_is_not_trusted(self):
+        broken = self.dir / "legacy.db.before-workspaces.bak"
+        broken.write_bytes(b"this is not a database")
+
+        Store(path=self.db).close()
+
+        self.assertEqual(broken.read_bytes(), b"this is not a database")
+        self.assertEqual(
+            _legacy_rows(self.dir / "legacy.db.before-workspaces.2.bak"), self.before
+        )
+
+    def test_without_a_copy_there_is_no_migration(self):
+        from unittest import mock
+
+        def half_written(conn, target):
+            Path(target).write_bytes(b"half a copy")
+            raise sqlite3.OperationalError("disk full")
+
+        with mock.patch("protas.db._write_copy", side_effect=half_written):
+            with self.assertRaises(self.db_module.MigrationError) as raised:
+                Store(path=self.db)
+
+        self.assertIn("could not copy", str(raised.exception))
+        self.assertIn("disk full", str(raised.exception))
+        # nothing half written stays behind and the database was not touched
+        self.assertEqual(self.names(), ["legacy.db"])
+        self.assertEqual(_legacy_rows(self.db), self.before)
+
+        Store(path=self.db).close()
+        self.assertEqual(self.names(), ["legacy.db", "legacy.db.before-workspaces.bak"])
+
+    def test_a_copy_that_does_not_match_stops_the_migration(self):
+        from unittest import mock
+
+        def wrong_copy(conn, target):
+            _create(Path(target), LIVED_IN_SCHEMA)
+
+        with mock.patch("protas.db._write_copy", side_effect=wrong_copy):
+            with self.assertRaises(self.db_module.MigrationError) as raised:
+                Store(path=self.db)
+
+        self.assertIn("could not copy", str(raised.exception))
+        self.assertEqual(self.names(), ["legacy.db"])
+        self.assertEqual(_legacy_rows(self.db), self.before)
+
+    def test_the_first_error_is_the_one_reported(self):
+        def closes_then_fails(conn):
+            conn.close()
+            raise ValueError("the real reason")
+
+        message = self.fail_migration(closes_then_fails)
+
+        self.assertIn("the real reason", message)
+        self.assertEqual(_legacy_rows(self.db), self.before)
+
+    def test_an_interrupted_migration_changes_nothing(self):
+        from unittest import mock
+
+        original = self.db_module._migrate_v2
+
+        def interrupted(conn):
+            original(conn)
+            raise KeyboardInterrupt
+
+        with mock.patch("protas.db._migrate_v2", side_effect=interrupted):
+            with self.assertRaises(KeyboardInterrupt):
+                Store(path=self.db)
+
+        self.assertEqual(_tables(self.db) - {"sqlite_sequence"}, {"days", "tasks", "carries"})
+        self.assertEqual(_legacy_rows(self.db), self.before)
+
+        # the file is free: the next start migrates it
+        store = Store(path=self.db)
+        try:
+            self.assertEqual(len(store.projects()), 1)
+        finally:
+            store.close()
+
+    def test_a_task_of_a_missing_day_is_named_in_the_error(self):
+        conn = sqlite3.connect(str(self.db))
+        conn.execute(
+            "INSERT INTO tasks (day_id, parent_id, text, position, created_at) "
+            "VALUES (99, NULL, 'Huerfana', 5, '2026-11-10T10:00:00')"
+        )
+        conn.commit()
+        conn.close()
+        before = _legacy_rows(self.db)
+
+        with self.assertRaises(self.db_module.MigrationError) as raised:
+            Store(path=self.db)
+
+        self.assertIn("task 4 belongs to day 99, which does not exist", str(raised.exception))
+        self.assertEqual(_legacy_rows(self.db), before)
+
+    def test_a_database_migrated_by_someone_else_meanwhile_is_left_alone(self):
+        from unittest import mock
+
+        original = self.db_module._backup_legacy
+        calls = []
+
+        def racing(conn, path):
+            calls.append(path)
+            if len(calls) == 1:
+                # another protas finishes the migration first
+                self.db_module.connect(path).close()
+            return original(conn, path)
+
+        with mock.patch("protas.db._backup_legacy", side_effect=racing):
+            store = Store(path=self.db)
+
+        try:
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(len(store.tasks_of(store.day("2026-11-10").id)), 2)
+            self.assertEqual(len(store.projects()), 1)
+            self.assertEqual(
+                store.conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 3
+            )
+        finally:
+            store.close()
+        self.assertEqual(self.names(), ["legacy.db", "legacy.db.before-workspaces.bak"])
+
+    def test_every_schema_script_splits_into_single_statements(self):
+        module = self.db_module
+        script = module.LEGACY_RENAME + module.SCHEMA + module.LEGACY_DROP
+        statements = module._statements(script)
+
+        for statement in statements:
+            self.assertTrue(sqlite3.complete_statement(statement), statement)
+            self.assertEqual(statement.count(";"), 1, statement)
+
+        # one by one they build the same schema as the script run whole
+        def schema_of(run):
+            conn = sqlite3.connect(":memory:")
+            try:
+                run(conn)
+                return conn.execute(
+                    "SELECT type, name, sql FROM sqlite_master ORDER BY name"
+                ).fetchall()
+            finally:
+                conn.close()
+
+        def one_by_one(conn):
+            for statement in module._statements(module.SCHEMA):
+                conn.execute(statement)
+
+        self.assertEqual(
+            schema_of(one_by_one), schema_of(lambda conn: conn.executescript(module.SCHEMA))
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

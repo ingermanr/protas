@@ -16,8 +16,10 @@ base tables through triggers, so the index never drifts from the data.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
+import tempfile
 from pathlib import Path
 
 SCHEMA_VERSION = 3
@@ -239,30 +241,97 @@ def _statements(script: str) -> list[str]:
     return statements
 
 
-def legacy_backup_path(path: Path) -> Path:
-    """Where the copy of a database from before the workspaces is kept."""
-    return path.with_name(path.name + ".before-workspaces.bak")
+def legacy_backup_path(path: Path, attempt: int = 1) -> Path:
+    """Where the copy of a database from before the workspaces is kept.
+
+    The first copy has the plain name; a later one, needed when that name
+    is taken by a different database, carries its number.
+    """
+    suffix = ".before-workspaces.bak" if attempt == 1 else f".before-workspaces.{attempt}.bak"
+    return path.with_name(path.name + suffix)
+
+
+LEGACY_TABLES = ("days", "tasks", "carries")
+
+
+def _legacy_fingerprint(conn: sqlite3.Connection) -> str:
+    """A digest of everything the old tables hold."""
+    digest = hashlib.sha256()
+    for table in LEGACY_TABLES:
+        digest.update(table.encode())
+        for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1, 2"):
+            digest.update(repr(tuple(row)).encode())
+    return digest.hexdigest()
+
+
+def _file_fingerprint(path: Path) -> str | None:
+    """The fingerprint of a copy, or None when it cannot be read as one."""
+    try:
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        return _legacy_fingerprint(conn)
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def _write_copy(conn: sqlite3.Connection, target: Path) -> None:
+    """Write a full copy of the database into ``target``."""
+    copy = sqlite3.connect(str(target))
+    try:
+        conn.backup(copy)
+    finally:
+        copy.close()
 
 
 def _backup_legacy(conn: sqlite3.Connection, path: Path) -> Path:
     """Copy the old database aside before touching it.
 
-    An existing copy is never replaced: it is the oldest one, taken before
-    any attempt to migrate.
+    A copy is only trusted when it holds exactly what the database holds
+    now. An existing file with other content is never replaced: it may be
+    the only copy of something else, so the new copy takes the next name.
     """
-    backup = legacy_backup_path(path)
-    if backup.exists():
-        return backup
+    wanted = _legacy_fingerprint(conn)
 
-    partial = backup.with_name(backup.name + ".partial")
-    partial.unlink(missing_ok=True)
-    copy = sqlite3.connect(str(partial))
+    attempt = 1
+    while True:
+        backup = legacy_backup_path(path, attempt)
+        if not backup.exists():
+            break
+        if _file_fingerprint(backup) == wanted:
+            return backup
+        attempt += 1
+
+    # The copy is written under a name nobody else uses and only shown
+    # under its final name once it is complete and checked.
+    handle, name = tempfile.mkstemp(dir=backup.parent, prefix=backup.name + ".", suffix=".partial")
+    os.close(handle)
+    partial = Path(name)
     try:
-        conn.backup(copy)
+        _write_copy(conn, partial)
+        if _file_fingerprint(partial) != wanted:
+            raise OSError(f"the copy written to {backup} does not match the database")
+        try:
+            # A link never replaces a file: if another protas got there
+            # first, its copy stays and must hold the same data.
+            os.link(partial, backup)
+        except FileExistsError:
+            if _file_fingerprint(backup) != wanted:
+                raise
+        except OSError:
+            # No hard links on this file system.
+            partial.replace(backup)
     finally:
-        copy.close()
-    partial.replace(backup)
+        partial.unlink(missing_ok=True)
     return backup
+
+
+def _is_legacy(conn: sqlite3.Connection) -> bool:
+    """True when the database still has the shape from before the workspaces."""
+    return _table_exists(conn, "days") and not _table_exists(conn, "workspaces")
 
 
 def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> None:
@@ -274,6 +343,9 @@ def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> None:
     try:
         backup = _backup_legacy(conn, path)
     except (OSError, sqlite3.Error) as error:
+        if not _is_legacy(conn):
+            # Another protas migrated it while this one was starting.
+            return
         raise MigrationError(
             f"could not copy {path} before migrating it: {error}. "
             "The database was left untouched."
@@ -283,21 +355,36 @@ def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> None:
     conn.isolation_level = None
     try:
         conn.execute("BEGIN IMMEDIATE")
+        if not _is_legacy(conn):
+            # Another protas migrated it while this one waited for the lock.
+            conn.execute("ROLLBACK")
+            return
         for statement in _statements(LEGACY_RENAME + SCHEMA):
             conn.execute(statement)
         _migrate_v2(conn)
         for statement in _statements(LEGACY_DROP):
             conn.execute(statement)
         conn.execute("COMMIT")
-    except Exception as error:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
+    except BaseException as error:
+        try:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            # The first error is the one worth reporting. SQLite undoes an
+            # open transaction by itself when the connection goes away.
+            pass
+        if not isinstance(error, Exception):
+            # Ctrl-C and the like: undo and let them through.
+            raise
         raise MigrationError(
             f"could not migrate {path}: {error}. "
             f"The database was left untouched and a copy is kept at {backup}."
         ) from error
     finally:
-        conn.isolation_level = isolation_level
+        try:
+            conn.isolation_level = isolation_level
+        except sqlite3.Error:
+            pass
 
 
 def _migrate_v2(conn: sqlite3.Connection) -> None:
@@ -321,6 +408,14 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
             (day["title"], day["date"], day["note"], day["created_at"]),
         )
         day_workspace[day["id"]] = cursor.lastrowid
+
+    def day_of(task: sqlite3.Row) -> int:
+        workspace_id = day_workspace.get(task["day_id"])
+        if workspace_id is None:
+            raise ValueError(
+                f"task {task['id']} belongs to day {task['day_id']}, which does not exist"
+            )
+        return workspace_id
 
     def top_ancestor(task: sqlite3.Row) -> sqlite3.Row:
         current = task
@@ -352,15 +447,15 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
 
         if project_id is not None:
             # The task itself stays in its day as a mention of the project.
-            workspace_id = day_workspace[task["day_id"]]
+            workspace_id = day_of(task)
         elif task["parent_id"] is not None:
             # Children move inside the workspace of their project.
             root = top_ancestor(task)
-            workspace_id = project_workspace.get(
-                root["id"], day_workspace[task["day_id"]]
-            )
+            workspace_id = project_workspace.get(root["id"])
+            if workspace_id is None:
+                workspace_id = day_of(task)
         else:
-            workspace_id = day_workspace[task["day_id"]]
+            workspace_id = day_of(task)
 
         cursor = conn.execute(
             """INSERT INTO tasks
@@ -436,11 +531,11 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
 
-    legacy = _table_exists(conn, "days") and not _table_exists(conn, "workspaces")
-    if legacy:
+    if _is_legacy(conn):
         try:
             _migrate_legacy(conn, target)
-        except MigrationError:
+        except BaseException:
+            # Nothing may keep the file locked after a failed migration.
             conn.close()
             raise
 
