@@ -14,6 +14,9 @@ from protas import cli, omarchy
 
 FAKE_OMARCHY = """#!/bin/sh
 echo "$@" >> "$FAKE_OMARCHY_LOG"
+if [ "$1 $2" = "$FAKE_OMARCHY_HANG" ]; then
+  exec sleep 5
+fi
 if [ "$1 $2" = "$FAKE_OMARCHY_FAIL" ]; then
   echo "fake failure" >&2
   exit 1
@@ -43,6 +46,7 @@ class OmarchyInstallTest(unittest.TestCase):
             "FAKE_OMARCHY_LOG": str(self.log),
             "FAKE_OMARCHY_FAIL": "",
             "FAKE_OMARCHY_BUSY_ONCE": "",
+            "FAKE_OMARCHY_HANG": "",
         }
         pause = mock.patch.object(omarchy, "BAR_RETRY_PAUSE", 0)
         pause.start()
@@ -76,10 +80,11 @@ class OmarchyInstallTest(unittest.TestCase):
         manifest = json.loads((self.target / "manifest.json").read_text())
         self.assertEqual(manifest["id"], omarchy.PLUGIN_ID)
         self.assertTrue((self.target / "Panel.qml").is_file())
+        calls = self.calls()
+        self.assertRegex(calls[0], rf"^plugin validate .*/{omarchy.PLUGIN_ID}$")
         self.assertEqual(
-            self.calls(),
+            calls[1:],
             [
-                f"plugin validate {self.target}",
                 "shell shell rescanPlugins",
                 f"plugin enable {omarchy.PLUGIN_ID}",
                 "restart shell",
@@ -146,7 +151,56 @@ class OmarchyInstallTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertIn("fake failure", err)
-        self.assertEqual(self.calls(), [f"plugin validate {self.target}"])
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_a_panel_that_does_not_validate_leaves_the_previous_one(self):
+        self.provide_omarchy()
+        self.target.mkdir(parents=True)
+        (self.target / "Panel.qml").write_text("old panel")
+        self.env["FAKE_OMARCHY_FAIL"] = "plugin validate"
+
+        code, _, _ = self.run_cli("install")
+
+        self.assertEqual(code, 1)
+        self.assertEqual((self.target / "Panel.qml").read_text(), "old panel")
+        self.assertEqual(
+            [path.name for path in self.target.parent.parent.iterdir()], ["plugins"]
+        )
+
+    def test_a_successful_install_leaves_nothing_else_behind(self):
+        self.provide_omarchy()
+        self.target.mkdir(parents=True)
+        (self.target / "Panel.qml").write_text("old panel")
+
+        self.run_cli("install")
+
+        self.assertEqual(
+            [path.name for path in self.target.parent.parent.iterdir()], ["plugins"]
+        )
+        self.assertEqual(
+            [path.name for path in self.target.parent.iterdir()], [omarchy.PLUGIN_ID]
+        )
+
+    def test_a_folder_that_cannot_be_written_is_reported_without_a_traceback(self):
+        self.provide_omarchy()
+        (self.config / "omarchy").mkdir(parents=True)
+        (self.config / "omarchy" / "plugins").write_text("not a folder")
+
+        code, _, err = self.run_cli("install")
+
+        self.assertEqual(code, 1)
+        self.assertIn("protas:", err)
+        self.assertEqual(self.calls(), [])
+
+    def test_a_step_that_hangs_is_given_up(self):
+        self.provide_omarchy()
+        self.env["FAKE_OMARCHY_HANG"] = "restart shell"
+
+        with mock.patch.object(omarchy, "STEP_TIMEOUT", 0.3):
+            code, _, err = self.run_cli("install")
+
+        self.assertEqual(code, 1)
+        self.assertIn("omarchy restart shell", err)
 
 
 if __name__ == "__main__":
