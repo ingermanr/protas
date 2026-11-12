@@ -44,7 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("text")
     add.add_argument("--date", default=None, help="day as YYYY-MM-DD (default: today)")
     add.add_argument("--project", type=int, default=None, help="add the task inside a project")
-    add.add_argument("--parent", type=int, default=None, help="id of the parent task")
+    add.add_argument(
+        "--parent",
+        type=int,
+        default=None,
+        help="id of the parent task (a task of a day becomes a project)",
+    )
 
     done = sub.add_parser("done", help="mark an entry as completed")
     done.add_argument("id", type=int)

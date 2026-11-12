@@ -165,7 +165,9 @@ la búsqueda sigue funcionando con un escaneo simple, solo que más lento.
 - **Mención**: una entrada de un día que apunta a un proyecto. Conserva su
   lugar en la agenda y muestra el progreso vivo del proyecto.
 - **Promover**: convertir una tarea en proyecto crea su workspace, muda sus
-  hijas adentro y deja la tarea original como mención.
+  hijas adentro y deja la tarea original como mención. Un día solo tiene
+  entradas planas: agregar una subtarea a una tarea de un día (`A` en la
+  TUI, `add --parent` en la línea de comandos) la promueve a proyecto.
 - **Estado vivo**: un proyecto tiene un único estado. Si todas sus tareas
   están hechas, el proyecto está hecho y todas sus menciones aparecen
   hechas. Reabrir una tarea del proyecto reabre el proyecto. Un proyecto

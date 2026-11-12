@@ -332,7 +332,12 @@ class Store:
         parent_id: int | None = None,
         day_id: int | None = None,
     ) -> Task:
-        """Create a task inside a workspace."""
+        """Create a task inside a workspace.
+
+        With a parent inside a project the task nests under it. With a
+        parent in a day the parent becomes a project and the task goes
+        inside that project.
+        """
         text = text.strip()
         if not text:
             raise ValueError("a task needs some text")
@@ -345,6 +350,14 @@ class Store:
                 raise ValueError(f"task {parent_id} does not exist")
             if parent.workspace_id != workspace_id:
                 raise ValueError("the parent task belongs to another workspace")
+            if workspace.is_day:
+                # A day holds flat entries. A task that gets a subtask is a
+                # project: it stays in the day as a mention and the subtask
+                # goes inside, so the rollover carries one entry.
+                project = self.promote(parent_id, day_id=workspace_id)
+                return self.add_task(
+                    text, project.id, day_id=day_id if day_id is not None else workspace_id
+                )
 
         position = self._next_position(workspace_id, parent_id)
         cursor = self.conn.execute(

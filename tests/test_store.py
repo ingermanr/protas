@@ -357,5 +357,73 @@ class NestedProjectTest(unittest.TestCase):
         self.assertTrue(self.store.task(self.leaf.id).done)
 
 
+
+class DaySubtaskTest(unittest.TestCase):
+    """A day holds flat entries: a task that gets a subtask is a project."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(path=Path(self.tmp.name) / "protas.db")
+        self.day = self.store.ensure_day("2026-11-02")
+        self.parent = self.store.add_task("Padre", self.day.id)
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_a_subtask_in_a_day_turns_the_task_into_a_project(self):
+        child = self.store.add_task("Hijo", self.day.id, parent_id=self.parent.id)
+
+        parent = self.store.task(self.parent.id)
+        self.assertTrue(parent.is_mention)
+        project = self.store.workspace(parent.project_id)
+        self.assertEqual((project.kind, project.title), ("project", "Padre"))
+
+        # the subtask lives inside the project, at the top
+        self.assertEqual(child.workspace_id, project.id)
+        self.assertIsNone(child.parent_id)
+        self.assertEqual([t.text for t in self.store.tasks_of(project.id)], ["Hijo"])
+
+        # and the day keeps one flat entry
+        entries = self.store.tasks_of(self.day.id)
+        self.assertEqual([(e.id, e.children) for e in entries], [(self.parent.id, [])])
+
+        kinds = [entry.kind for entry in self.store.history(project.id).entries]
+        self.assertEqual(kinds.count("created"), 1)
+        self.assertEqual(kinds.count("task_added"), 1)
+
+    def test_a_second_subtask_goes_into_the_same_project(self):
+        self.store.add_task("Uno", self.day.id, parent_id=self.parent.id)
+        self.store.add_task("Dos", self.day.id, parent_id=self.parent.id)
+
+        self.assertEqual(len(self.store.projects()), 1)
+        project_id = self.store.task(self.parent.id).project_id
+        self.assertEqual([t.text for t in self.store.tasks_of(project_id)], ["Uno", "Dos"])
+
+    def test_the_next_day_receives_the_project_and_not_loose_subtasks(self):
+        self.store.add_task("Hijo", self.day.id, parent_id=self.parent.id)
+
+        carried = self.store.rollover("2026-11-03")
+
+        self.assertEqual(len(carried), 1)
+        entry = self.store.task(carried[0])
+        self.assertTrue(entry.is_mention)
+        self.assertEqual(self.store.title_of(entry), "Padre")
+
+    def test_a_parent_from_another_workspace_is_still_refused(self):
+        other = self.store.ensure_day("2026-11-03")
+        with self.assertRaises(ValueError):
+            self.store.add_task("Hijo", other.id, parent_id=self.parent.id)
+        self.assertFalse(self.store.task(self.parent.id).is_mention)
+
+    def test_subtasks_inside_a_project_still_nest(self):
+        project = self.store.create_project("Con arbol")
+        top = self.store.add_task("Arriba", project.id)
+        child = self.store.add_task("Abajo", project.id, parent_id=top.id)
+
+        self.assertEqual(child.parent_id, top.id)
+        self.assertEqual(len(self.store.projects()), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

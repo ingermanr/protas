@@ -129,6 +129,21 @@ class CliTest(unittest.TestCase):
         self.assertIn("Migrar la base de datos", out)
 
 
+    def test_add_with_a_parent_in_a_day_makes_a_project(self):
+        _, out = self.run_cli("add", "Preparar el viaje", "--date", "2026-11-11")
+        parent_id = out.strip()
+
+        code, out = self.run_cli("add", "Comprar pasajes", "--date", "2026-11-11", "--parent", parent_id)
+        self.assertEqual(code, 0)
+        self.assertTrue(out.strip().isdigit())
+
+        _, out = self.run_cli("show", "2026-11-11")
+        self.assertIn("[ ] Preparar el viaje  (proyecto 0/1)", out)
+        self.assertNotIn("Comprar pasajes", out)
+
+        _, out = self.run_cli("projects")
+        self.assertIn("Preparar el viaje  (0/1)", out)
+
 
 class InvalidDateTest(unittest.TestCase):
     """A day only exists for a real date written as YYYY-MM-DD."""
