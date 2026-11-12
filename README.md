@@ -67,6 +67,7 @@ dejarle lugar.
 protas add "Preparar la reunion" --date 2026-11-11
 protas add "Esquema de la tabla" --project 3
 protas list --date 2026-11-11
+protas list --all --json        # el día como datos, para otras herramientas
 protas done 6
 protas undone 6
 protas note "Resumen de la sesion" --date 2026-11-11
@@ -82,6 +83,12 @@ protas doctor                  # revisa la base sin cambiarla
 
 Las fechas se escriben como `AAAA-MM-DD`. Cualquier otra cosa se rechaza
 con un error y no crea ningún día.
+
+`protas list --json` solo lee: no crea el día si falta ni arrastra lo
+pendiente, así que un panel puede consultarlo cada pocos segundos sin
+cambiar la base. Devuelve el espacio (`workspace`), los totales
+(`counts`), la nota (`note`) y las entradas (`entries`) con su
+profundidad, su origen y, en las menciones, el avance del proyecto.
 
 ### Historial
 

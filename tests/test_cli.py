@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -77,6 +78,77 @@ class CliTest(unittest.TestCase):
         exported = out_dir / "2026-11-11.md"
         self.assertTrue(exported.exists())
         self.assertIn("Pendiente", exported.read_text())
+
+    # ------------------------------------------------------------------
+    # list --json
+    # ------------------------------------------------------------------
+    def test_list_json_does_not_create_a_missing_day(self):
+        code, out = self.run_cli("list", "--date", "2020-01-01", "--json")
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        self.assertIsNone(payload["workspace"]["id"])
+        self.assertEqual(payload["workspace"]["date"], "2020-01-01")
+        self.assertEqual(payload["counts"], {"total": 0, "done": 0, "open": 0, "projects": 0})
+        self.assertEqual(payload["entries"], [])
+
+        from protas.store import Store
+
+        store = Store(path=self.db)
+        try:
+            self.assertIsNone(store.day("2020-01-01"))
+        finally:
+            store.close()
+
+    def test_list_json_reports_the_day_with_entries_and_counts(self):
+        self.run_cli("note", "Resumen del dia", "--date", "2026-11-11")
+        self.run_cli("add", "Pendiente", "--date", "2026-11-11")
+        self.run_cli("add", "Terminada", "--date", "2026-11-11")
+        _, out = self.run_cli("list", "--date", "2026-11-11")
+        second_id = int(out.strip().splitlines()[1].split()[0])
+        self.run_cli("done", str(second_id))
+
+        code, out = self.run_cli("list", "--date", "2026-11-11", "--json")
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out)
+        self.assertEqual(payload["workspace"]["date"], "2026-11-11")
+        self.assertEqual(payload["note"], "Resumen del dia")
+        self.assertEqual(payload["counts"], {"total": 2, "done": 1, "open": 1, "projects": 0})
+        entries = payload["entries"]
+        self.assertEqual([entry["text"] for entry in entries], ["Pendiente"])
+        self.assertEqual(entries[0]["depth"], 0)
+        self.assertFalse(entries[0]["done"])
+        self.assertIsNone(entries[0]["origin"])
+        self.assertIsNone(entries[0]["progress"])
+
+    def test_list_json_includes_finished_entries_only_with_all(self):
+        self.run_cli("add", "Terminada", "--date", "2026-11-11")
+        _, out = self.run_cli("list", "--date", "2026-11-11")
+        task_id = int(out.strip().split()[0])
+        self.run_cli("done", str(task_id))
+
+        _, out = self.run_cli("list", "--date", "2026-11-11", "--json")
+        self.assertEqual(json.loads(out)["entries"], [])
+
+        _, out = self.run_cli("list", "--date", "2026-11-11", "--all", "--json")
+        entries = json.loads(out)["entries"]
+        self.assertEqual([entry["text"] for entry in entries], ["Terminada"])
+        self.assertTrue(entries[0]["done"])
+
+    def test_list_json_reports_project_progress_for_a_mention(self):
+        self.run_cli("add", "Migrar la base de datos", "--date", "2026-11-11")
+        _, out = self.run_cli("list", "--date", "2026-11-11")
+        task_id = int(out.strip().split()[0])
+        project_id = int(self.run_cli("promote", str(task_id))[1].strip())
+        self.run_cli("add", "Esquema", "--project", str(project_id))
+
+        _, out = self.run_cli("list", "--date", "2026-11-11", "--json")
+
+        entries = json.loads(out)["entries"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["project_id"], project_id)
+        self.assertEqual(entries[0]["progress"], {"total": 1, "done": 0, "open": 1})
 
     # ------------------------------------------------------------------
     # projects
@@ -200,6 +272,7 @@ class InvalidDateTest(unittest.TestCase):
             ("add", "Otra", "--date", "foo"),
             ("show", "mañana"),
             ("list", "--date", "2026-13-40"),
+            ("list", "--json", "--date", "2026-13-40"),
             ("note", "texto", "--date", "2026-1-5"),
             ("mention", "1", "--date", "20261111"),
             ("roll", "--to", "foo"),

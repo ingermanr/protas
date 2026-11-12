@@ -10,11 +10,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Optional
 
 from . import text
 from . import __version__, db
 from .db import MigrationError
-from .store import Store, Task, Workspace, describe_event, today
+from .store import Store, Task, Workspace, check_date, describe_event, today
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--date", default=None, help="day as YYYY-MM-DD (default: today)")
     listing.add_argument("--project", type=int, default=None)
     listing.add_argument("--all", action="store_true", help="include finished entries")
+    listing.add_argument("--json", action="store_true", help="machine readable output")
 
     add = sub.add_parser("add", help="add a task")
     add.add_argument("text")
@@ -208,12 +210,93 @@ def cmd_show(store: Store, args) -> int:
 
 
 def cmd_list(store: Store, args) -> int:
+    if args.json:
+        workspace = _read_workspace(store, args)
+        tasks = (
+            store.tasks_of(workspace.id, include_done=args.all) if workspace else []
+        )
+        date_str = workspace.date if workspace else (args.date or today())
+        print(
+            json.dumps(
+                list_payload(store, workspace, date_str, tasks),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
     workspace = _workspace_for(store, args)
     for node, depth in walk(store.tasks_of(workspace.id, include_done=args.all)):
         marker = "[x]" if store.is_done(node) else "[ ]"
         print(f"{node.id} {marker} {'  ' * depth}{store.title_of(node)}")
     store.discard_if_empty(workspace.id)
     return 0
+
+
+def _read_workspace(store: Store, args) -> Optional[Workspace]:
+    """Resolve a workspace for a report without creating or rolling it.
+
+    ``list --json`` feeds dashboards that poll it, so reading it must not
+    write: a missing day stays missing and no pending work is carried.
+    """
+    if getattr(args, "project", None):
+        workspace = store.workspace(args.project)
+        if workspace is None:
+            raise ValueError(f"project {args.project} does not exist")
+        return workspace
+    date_str = args.date or today()
+    check_date(date_str)
+    return store.day(date_str)
+
+
+def list_payload(
+    store: Store,
+    workspace: Optional[Workspace],
+    date_str: str,
+    tasks: list[Task],
+) -> dict:
+    """The workspace as data: what the day holds, ready for other tools.
+
+    Counts keep their live state, and a mention carries the progress of
+    the project it points at, so a widget can show "2/5" without a second
+    query.
+    """
+    entries = []
+    for node, depth in walk(tasks):
+        entries.append(
+            {
+                "id": node.id,
+                "text": store.title_of(node),
+                "done": store.is_done(node),
+                "depth": depth,
+                "parent_id": node.parent_id,
+                "project_id": node.project_id,
+                "origin": store.origin_date(node),
+                "position": node.position,
+                "progress": (
+                    store.project_state(node.project_id) if node.is_mention else None
+                ),
+            }
+        )
+
+    if workspace is None:
+        counts = {"total": 0, "done": 0, "open": 0, "projects": 0}
+        kind = "day"
+    else:
+        counts = store.counts(workspace.id)
+        kind = workspace.kind
+
+    return {
+        "workspace": {
+            "id": workspace.id if workspace else None,
+            "kind": kind,
+            "date": date_str,
+            "title": workspace.title if workspace else date_str,
+        },
+        "counts": counts,
+        "note": workspace.note if workspace else "",
+        "entries": entries,
+    }
 
 
 def walk(tasks: list[Task], depth: int = 0):
