@@ -54,6 +54,7 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `←` / `→` | moverse entre días |
 | `r` | actualizar el día (trae lo pendiente si es hoy) |
 | `g` / `G` | ir a la primera o a la última entrada |
+| `?` | ver todas las teclas en pantalla |
 | `q` | salir |
 
 ### Comandos

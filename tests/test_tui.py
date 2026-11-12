@@ -179,6 +179,80 @@ class TuiSmokeTest(unittest.TestCase):
             self.assertEqual(days[today()], 0)
             self.assertEqual(sorted(days.values()), [0, 1])
 
+    def test_the_help_screen_lists_every_key(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        from protas.tui import HELP, _help_lines
+
+        lines = _help_lines()
+        text = "\n".join(lines)
+        for key in ("j / k", "g / G", "espacio", "enter", "a", "A", "p", "e", "x", "n",
+                    "h", "s", "r", "←  / →", "esc", "?", "q"):
+            self.assertTrue(
+                any(line.strip().startswith(key + "  ") for line in lines), f"{key!r} in\n{text}"
+            )
+        # short enough to be read on a small terminal
+        self.assertLessEqual(len(lines), 20)
+        self.assertLessEqual(max(len(line) for line in lines), 78)
+        # and the footer says how to get there before anything can be cut
+        self.assertTrue(HELP.startswith("? ayuda | "))
+
+    def test_the_question_mark_opens_the_help_screen(self):
+        import select
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = str(Path(tmp) / "protas.db")
+            master, slave = pty.openpty()
+            env = dict(os.environ)
+            env["TERM"] = "xterm-256color"
+            env["PYTHONPATH"] = str(REPO_ROOT)
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "protas", "--db", db, "tui"],
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                cwd=str(REPO_ROOT),
+                env=env,
+                close_fds=True,
+            )
+            os.close(slave)
+
+            def screen():
+                data = b""
+                while select.select([master], [], [], 0.5)[0]:
+                    data += os.read(master, 65536)
+                return data.decode("utf-8", "replace")
+
+            try:
+                time.sleep(1.5)
+                before = screen()
+                os.write(master, b"?")
+                opened = screen()
+                os.write(master, b"\x1b")
+                time.sleep(0.3)
+                os.write(master, b"aDespues de la ayuda\r")
+                time.sleep(0.5)
+                os.write(master, b"q")
+                proc.wait(timeout=15)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                os.close(master)
+
+            self.assertEqual(proc.returncode, 0)
+            self.assertNotIn("completar o reabrir", before)
+            self.assertIn("completar o reabrir", opened)
+
+            sys.path.insert(0, str(REPO_ROOT))
+            from protas.store import Store
+
+            store = Store(path=db)
+            try:
+                tasks = store.tasks_of(store.open_day().id)
+                self.assertEqual([t.text for t in tasks], ["Despues de la ayuda"])
+            finally:
+                store.close()
+
     def test_the_help_line_names_the_keys_that_exist(self):
         sys.path.insert(0, str(REPO_ROOT))
         from protas.tui import HELP

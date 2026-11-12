@@ -18,10 +18,36 @@ from typing import Optional
 from .store import Store, Task, Workspace, check_date, describe_event, today
 
 HELP = (
-    "j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
+    "? ayuda | j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
     "e editar | n nota | x borrar | enter abrir | esc volver | ←/→ dia | "
     "h historia | s numeros | q salir | r actualizar | g/G inicio/fin"
 )
+
+
+KEYS = (
+    ("j / k", "mover la seleccion"),
+    ("g / G", "ir a la primera o a la ultima entrada"),
+    ("espacio", "completar o reabrir la entrada"),
+    ("enter", "abrir el proyecto de una mencion"),
+    ("a", "nueva tarea"),
+    ("A", "nueva subtarea (la tarea pasa a ser proyecto)"),
+    ("p", "promover la tarea a proyecto"),
+    ("e", "editar el texto"),
+    ("x", "borrar la entrada"),
+    ("n", "editar la nota"),
+    ("h", "ver la historia del proyecto"),
+    ("s", "ver los numeros"),
+    ("r", "actualizar el dia"),
+    ("←  / →", "moverse entre dias"),
+    ("esc", "volver al dia o cerrar esta pantalla"),
+    ("?", "abrir o cerrar esta ayuda"),
+    ("q", "salir"),
+)
+
+
+def _help_lines() -> list[str]:
+    """Every key and what it does, ready to draw."""
+    return [" Teclas", ""] + [f"  {key:<9}  {action}" for key, action in KEYS]
 
 
 class Editor:
@@ -150,6 +176,12 @@ def _draw(
 
     if visible and view == "history":
         for index, line in enumerate(_history_lines(store, workspace)[:visible]):
+            try:
+                stdscr.addstr(body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width))
+            except curses.error:
+                pass
+    elif visible and view == "help":
+        for index, line in enumerate(_help_lines()[:visible]):
             try:
                 stdscr.addstr(body_top + index, 0, _clip(line.ljust(max(width - 1, 0)), width))
             except curses.error:
@@ -529,9 +561,11 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 message = "el historial es de los proyectos"
         elif ch == ord("s"):
             view = "tasks" if view == "stats" else "stats"
+        elif ch == ord("?"):
+            view = "tasks" if view == "help" else "help"
         elif ch == 27:
             # Escape goes back to the day when a project is open.
-            if view in ("history", "stats"):
+            if view in ("history", "stats", "help"):
                 view = "tasks"
             elif workspace.is_project:
                 workspace = current_day
