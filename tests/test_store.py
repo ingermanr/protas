@@ -212,5 +212,81 @@ class WorkspaceTest(unittest.TestCase):
         self.assertEqual(self.store.projects()[0].days, ["2026-11-10", "2026-11-11"])
 
 
+
+class EmptyProjectTest(unittest.TestCase):
+    """A project without tasks is completed like any other entry."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(path=Path(self.tmp.name) / "protas.db")
+        self.day = self.store.ensure_day("2026-11-02")
+        self.entry = self.store.add_task("Proyecto vacio", self.day.id)
+        self.project = self.store.promote(self.entry.id)
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def _kinds(self):
+        return [entry.kind for entry in self.store.history(self.project.id).entries]
+
+    def test_it_starts_pending(self):
+        self.assertFalse(self.store.is_done(self.store.task(self.entry.id)))
+        self.assertFalse(self.store.project_is_done(self.project.id))
+
+    def test_marking_the_entry_completes_the_project(self):
+        self.store.set_done(self.entry.id, True)
+
+        self.assertTrue(self.store.is_done(self.store.task(self.entry.id)))
+        self.assertTrue(self.store.project_is_done(self.project.id))
+        self.assertEqual(self.store.counts(self.day.id)["done"], 1)
+        self.assertEqual(self._kinds().count("project_completed"), 1)
+        # finished work does not travel
+        self.assertEqual(self.store.rollover("2026-11-03"), [])
+
+    def test_it_can_be_reopened(self):
+        self.store.set_done(self.entry.id, True)
+        self.store.set_done(self.entry.id, False)
+
+        self.assertFalse(self.store.project_is_done(self.project.id))
+        self.assertEqual(self._kinds().count("project_reopened"), 1)
+        self.assertEqual(len(self.store.rollover("2026-11-03")), 1)
+
+    def test_every_day_that_mentions_it_shows_the_same_state(self):
+        carried = self.store.rollover("2026-11-03")
+        self.store.set_done(carried[0], True)
+
+        self.assertTrue(self.store.is_done(self.store.task(self.entry.id)))
+        self.assertTrue(self.store.is_done(self.store.task(carried[0])))
+
+        later = self.store.ensure_day("2026-11-05")
+        mention = self.store.add_mention(self.project.id, later.id)
+        self.assertTrue(self.store.is_done(mention))
+
+    def test_a_new_task_reopens_it(self):
+        self.store.set_done(self.entry.id, True)
+        task = self.store.add_task("Aparecio trabajo", self.project.id)
+
+        self.assertFalse(self.store.project_is_done(self.project.id))
+
+        # and it stays open if that task goes away again
+        self.store.delete_task(task.id)
+        self.assertFalse(self.store.project_is_done(self.project.id))
+
+    def test_a_project_with_tasks_still_follows_its_tasks(self):
+        first = self.store.add_task("Uno", self.project.id)
+        second = self.store.add_task("Dos", self.project.id)
+
+        self.store.set_done(first.id, True)
+        self.assertFalse(self.store.project_is_done(self.project.id))
+
+        self.store.set_done(self.entry.id, True)
+        self.assertTrue(self.store.task(second.id).done)
+        self.assertTrue(self.store.project_is_done(self.project.id))
+
+        self.store.set_done(second.id, False)
+        self.assertFalse(self.store.is_done(self.store.task(self.entry.id)))
+
+
 if __name__ == "__main__":
     unittest.main()

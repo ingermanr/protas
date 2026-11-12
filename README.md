@@ -166,7 +166,9 @@ la búsqueda sigue funcionando con un escaneo simple, solo que más lento.
   hijas adentro y deja la tarea original como mención.
 - **Estado vivo**: un proyecto tiene un único estado. Si todas sus tareas
   están hechas, el proyecto está hecho y todas sus menciones aparecen
-  hechas. Reabrir una tarea del proyecto reabre el proyecto.
+  hechas. Reabrir una tarea del proyecto reabre el proyecto. Un proyecto
+  sin tareas se marca como cualquier entrada, y agregarle una tarea lo
+  reabre.
 - **Arrastre**: lo pendiente se **copia** al día siguiente y la entrada
   original se queda donde estaba, así cada día conserva un registro honesto
   de lo que realmente pasó. Un registro de arrastes evita duplicados, y las

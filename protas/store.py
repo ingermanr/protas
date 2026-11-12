@@ -356,6 +356,8 @@ class Store:
         )
         new_id = cursor.lastrowid
         if workspace.is_project:
+            # New work reopens a project that was completed while empty.
+            self._write_mentions_done(workspace_id, False)
             self.record_event(workspace_id, "task_added", text=text, day_id=day_id, task_id=new_id)
         self.conn.commit()
         return self.task(new_id)
@@ -433,8 +435,19 @@ class Store:
         return {"total": total, "done": done, "open": total - done}
 
     def project_is_done(self, project_id: int) -> bool:
+        """The live state of a project.
+
+        A project with tasks is done when all of them are. A project
+        without tasks has nothing to derive its state from, so it keeps it
+        on the entries that mention it, like a plain task would.
+        """
         state = self.project_state(project_id)
-        return state["total"] > 0 and state["open"] == 0
+        if state["total"] == 0:
+            row = self.conn.execute(
+                "SELECT 1 FROM tasks WHERE project_id = ? AND done = 1", (project_id,)
+            ).fetchone()
+            return row is not None
+        return state["open"] == 0
 
     def set_done(self, task_id: int, done: bool = True, day_id: int | None = None) -> Task:
         """Complete or reopen an entry.
@@ -483,6 +496,16 @@ class Store:
         ).fetchall()
         for row in rows:
             self._write_done(row["id"], done)
+        if not rows:
+            # Nothing inside to complete: the state goes on every entry
+            # that mentions the project, so all the days agree.
+            self._write_mentions_done(project_id, done)
+
+    def _write_mentions_done(self, project_id: int, done: bool) -> None:
+        self.conn.execute(
+            "UPDATE tasks SET done = ?, done_at = ? WHERE project_id = ?",
+            (1 if done else 0, _now() if done else None, project_id),
+        )
 
     def _write_done(self, task_id: int, done: bool) -> None:
         self.conn.execute(
