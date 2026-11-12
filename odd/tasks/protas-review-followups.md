@@ -29,8 +29,8 @@ Test runner: `python -m unittest discover -s tests` (pytest is not installed).
 - [x] T1 (S1) inline. Risk item 1 (migration of stored data): own commit,
   independent verifier and native review (results in the Log).
 - [ ] T2 (S2) blocked on the user's decision.
-- [ ] T3 (S3) inline.
-- [ ] T4 (S4) inline.
+- [x] T3 (S3) inline. Commit `3d74792`.
+- [x] T4 (S4) inline. Commit `bd7d851`.
 - [ ] T5 (S5) blocked on the user's decision.
 
 ## Log
@@ -48,3 +48,11 @@ Test runner: `python -m unittest discover -s tests` (pytest is not installed).
   migrated by another process meanwhile is left alone.
 - L4: slice `e8ac006..c14c6e8` (9 commits, 937 lines) assessed: medium,
   review not due (`under_budget`).
+- L5 (2026-11-12): T3 and T4 committed. T3: `Store.discard_if_empty` forgets a
+  day left without entries or note (never today, never a project); the TUI
+  calls it when leaving a day with the arrows or `q`, and `show`, `list` and a
+  read-only `note` call it too. Events only hang from projects, so nothing of
+  the history is lost. T4: `?` opens a full key screen, `esc` or `?` closes it,
+  and the footer starts with `? ayuda`. 177 tests pass.
+- L6: slice `7c4c12d..bd7d851` assessed: medium, review not due
+  (`under_budget`). Next: T2 and T5 wait for the user's decision.
