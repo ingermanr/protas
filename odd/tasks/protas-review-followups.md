@@ -28,7 +28,7 @@ Test runner: `python -m unittest discover -s tests` (pytest is not installed).
 
 - [x] T1 (S1) inline. Risk item 1 (migration of stored data): own commit,
   independent verifier and native review (results in the Log).
-- [ ] T2 (S2) blocked on the user's decision.
+- [x] T2 (S2) closed without changes (see L7).
 - [x] T3 (S3) inline. Commit `3d74792`.
 - [x] T4 (S4) inline. Commit `bd7d851`.
 - [ ] T5 (S5) blocked on the user's decision.
@@ -56,3 +56,7 @@ Test runner: `python -m unittest discover -s tests` (pytest is not installed).
   and the footer starts with `? ayuda`. 177 tests pass.
 - L6: slice `7c4c12d..bd7d851` assessed: medium, review not due
   (`under_budget`). Next: T2 and T5 wait for the user's decision.
+- L7 (2026-11-12, user): "cierra, no importa si borras la base, nsolo tenía
+  tareas de prueba". The future day became today, so its two copies are the
+  ones today's rollover would create; nothing was deleted from the installed
+  database. Next: T5 proposal.
