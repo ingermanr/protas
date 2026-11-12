@@ -1,6 +1,29 @@
-# protas
+<p align="center">
+  <img src="assets/logo.svg" width="120" alt="Logo de protas: una hoja de notas con una lista de tareas">
+</p>
 
-Notas y tareas del día, con un espacio de trabajo por día.
+<h1 align="center">protas</h1>
+
+<p align="center">
+  <strong>pro</strong>yectos + no<strong>tas</strong>: las notas y tareas del día,
+  con un espacio de trabajo por día.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-1f7a6d" alt="Python 3.11 o superior">
+  <img src="https://img.shields.io/badge/dependencias-ninguna-1f7a6d" alt="Sin dependencias">
+  <img src="https://img.shields.io/badge/datos-SQLite%20local-1f7a6d" alt="Datos en SQLite local">
+  <img src="https://img.shields.io/badge/interfaz-CLI%20%2B%20TUI-1f7a6d" alt="Interfaz de línea de comandos y TUI">
+  <img src="https://img.shields.io/badge/Omarchy-panel%20opcional-1f7a6d" alt="Panel opcional para Omarchy">
+</p>
+
+<p align="center">
+  <a href="#instalación">Instalación</a> ·
+  <a href="#uso-diario">Uso diario</a> ·
+  <a href="#búsqueda">Búsqueda</a> ·
+  <a href="#panel-de-omarchy">Panel de Omarchy</a> ·
+  <a href="#roadmap">Roadmap</a>
+</p>
 
 Cada día es un **espacio de trabajo** cuyo nombre es la fecha (`YYYY-MM-DD`).
 Dentro hay una nota libre y una lista de entradas. Lo que no se completó se
@@ -308,7 +331,5 @@ código está en `protas/integrations/omarchy/german-ds.protas/`.
 
 ## Roadmap
 
-- Encabezado del README como el de las herramientas en GitHub: nombre de
-  la herramienta, logo, descripción corta e insignias.
 - Tareas recurrentes, prioridades y estimación de tiempo.
 - Exportación a Markdown (ya disponible) y a Obsidian.
