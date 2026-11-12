@@ -199,14 +199,39 @@ anidarse dentro de otro proyecto.
 python3 -m unittest discover -s tests
 ```
 
-## Actualizar una base antigua
+## Actualizaciones
 
-Una base creada antes de los workspaces se migra sola al abrirla. Antes
-de tocarla se guarda una copia al lado, `protas.db.before-workspaces.bak`
-(si ese nombre ya lo ocupa otra base, la copia nueva lleva número:
-`.before-workspaces.2.bak`),
-y la migración es todo o nada: si falla, la base queda como estaba y
-`protas` avisa por la salida de error.
+La base lleva un número de versión de su esquema. Cuando una versión
+nueva de `protas` cambia el esquema, la base se actualiza sola al abrirla,
+sin correr ningún comando:
+
+- **Copia primero.** Antes de tocar nada se guarda una copia al lado de
+  la base, con la versión que tenía: `protas.db.v3.bak`. Una copia que ya
+  existe solo se reutiliza si contiene exactamente lo mismo; si ese nombre
+  lo ocupa otra cosa no se pisa y la copia nueva lleva número
+  (`protas.db.v3.2.bak`). Sin copia no hay actualización.
+- **Todo o nada.** Todos los pasos corren en una sola transacción. Si
+  alguno falla, la base queda como estaba y `protas` sale con el error por
+  la salida de error, diciendo dónde quedó la copia.
+- **Una base más nueva no se toca.** Si la base la escribió un `protas`
+  más nuevo que el instalado, se rechaza con un mensaje claro y no se
+  modifica. Actualiza `protas` para abrirla.
+- **Las versiones viejas se siguen soportando.** Los pasos se encadenan
+  (3 → 4 → 5…), así que una base antigua llega a la versión actual de una
+  sola vez.
+
+Una base creada antes de los workspaces también se migra sola al abrirla,
+con las mismas garantías; su copia se llama
+`protas.db.before-workspaces.bak`.
+
+Para volver atrás, cierra `protas` y reemplaza la base por la copia.
+
+### Agregar un cambio de esquema
+
+En `protas/db.py`: cambia `SCHEMA` (lo que recibe una base nueva), sube
+`SCHEMA_VERSION` y registra en `MIGRATIONS` el paso que lleva una base de
+la versión anterior a la nueva. El paso recibe la conexión dentro de la
+transacción y no debe hacer `commit` ni usar `executescript`.
 
 ## Roadmap
 

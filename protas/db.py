@@ -21,9 +21,14 @@ import os
 import sqlite3
 import stat
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Callable, Iterator
 
 SCHEMA_VERSION = 3
+
+# The first numbered shape: what the move from days to workspaces produces.
+BASELINE_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -197,7 +202,11 @@ def _index_is_consistent(conn: sqlite3.Connection) -> bool:
 
 
 class MigrationError(RuntimeError):
-    """An older database could not be brought to the current schema."""
+    """The database could not be brought to the schema of this protas.
+
+    Either an update failed, and the database was left as it was, or the
+    database belongs to a newer protas and was not touched.
+    """
 
 
 # The old schema used ``days``, ``tasks`` and ``carries``; the new one uses
@@ -265,14 +274,35 @@ def _legacy_fingerprint(conn: sqlite3.Connection) -> str:
     return digest.hexdigest()
 
 
-def _file_fingerprint(path: Path) -> str | None:
+def _fingerprint(conn: sqlite3.Connection) -> str:
+    """A digest of the shape and the rows of every table.
+
+    The search index is left out: it is rebuilt from the tables and a
+    SQLite without FTS5 cannot read it.
+    """
+    digest = hashlib.sha256()
+    tables = conn.execute(
+        """SELECT name, sql FROM sqlite_master
+           WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%'
+           ORDER BY name"""
+    ).fetchall()
+    for name, sql in tables:
+        digest.update(f"{name}\n{sql}\n".encode())
+        for row in conn.execute(f'SELECT * FROM "{name}" ORDER BY rowid'):
+            digest.update(repr(tuple(row)).encode())
+    return digest.hexdigest()
+
+
+def _file_fingerprint(
+    path: Path, fingerprint: Callable[[sqlite3.Connection], str] = _legacy_fingerprint
+) -> str | None:
     """The fingerprint of a copy, or None when it cannot be read as one."""
     try:
         conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
     except sqlite3.Error:
         return None
     try:
-        return _legacy_fingerprint(conn)
+        return fingerprint(conn)
     except sqlite3.Error:
         return None
     finally:
@@ -288,21 +318,29 @@ def _write_copy(conn: sqlite3.Connection, target: Path) -> None:
         copy.close()
 
 
-def _backup_legacy(conn: sqlite3.Connection, path: Path) -> Path:
-    """Copy the old database aside before touching it.
+def _backup(
+    conn: sqlite3.Connection,
+    path: Path,
+    name_for: Callable[[int], Path],
+    fingerprint: Callable[[sqlite3.Connection], str],
+) -> Path:
+    """Copy the database aside before touching it.
+
+    ``name_for`` gives the name of the copy for an attempt number and
+    ``fingerprint`` says what two databases must share to be the same.
 
     A copy is only trusted when it holds exactly what the database holds
     now. An existing file with other content is never replaced: it may be
     the only copy of something else, so the new copy takes the next name.
     """
-    wanted = _legacy_fingerprint(conn)
+    wanted = fingerprint(conn)
 
     attempt = 1
     while True:
-        backup = legacy_backup_path(path, attempt)
+        backup = name_for(attempt)
         if not backup.exists():
             break
-        if _file_fingerprint(backup) == wanted:
+        if _file_fingerprint(backup, fingerprint) == wanted:
             return backup
         attempt += 1
 
@@ -316,14 +354,14 @@ def _backup_legacy(conn: sqlite3.Connection, path: Path) -> Path:
         # The temporary file is private; the copy gets the permissions of
         # the database it is a copy of.
         os.chmod(partial, stat.S_IMODE(os.stat(path).st_mode))
-        if _file_fingerprint(partial) != wanted:
+        if _file_fingerprint(partial, fingerprint) != wanted:
             raise OSError(f"the copy written to {backup} does not match the database")
         try:
             # A link never replaces a file: if another protas got there
             # first, its copy stays and must hold the same data.
             os.link(partial, backup)
         except FileExistsError:
-            if _file_fingerprint(backup) != wanted:
+            if _file_fingerprint(backup, fingerprint) != wanted:
                 raise
         except OSError:
             # No hard links on this file system.
@@ -331,6 +369,13 @@ def _backup_legacy(conn: sqlite3.Connection, path: Path) -> Path:
     finally:
         partial.unlink(missing_ok=True)
     return backup
+
+
+def _backup_legacy(conn: sqlite3.Connection, path: Path) -> Path:
+    """Copy a database from before the workspaces aside before moving it."""
+    return _backup(
+        conn, path, lambda attempt: legacy_backup_path(path, attempt), _legacy_fingerprint
+    )
 
 
 def _is_legacy(conn: sqlite3.Connection) -> bool:
@@ -511,19 +556,163 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
         )
 
 
-def _migrate(conn: sqlite3.Connection) -> None:
-    """Bring an older database up to the current schema version."""
-    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
-    version = int(row["value"]) if row else None
-    if version == SCHEMA_VERSION:
-        return
+# One step per schema change. The step registered under a version takes a
+# database from that version to the next one; opening an older database
+# walks them in order. To change the schema: change SCHEMA (what a new
+# database gets), raise SCHEMA_VERSION and register the step here.
+#
+# A step receives the connection inside the transaction of the update. It
+# must not commit, roll back or call ``executescript`` (which commits).
+#
+# The move from days to workspaces builds SCHEMA directly, so it has to
+# keep producing the baseline shape: when the first step is added, give
+# that move its own frozen copy of the version 3 schema.
+MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {}
 
+
+def version_backup_path(path: Path, version: int, attempt: int = 1) -> Path:
+    """Where the copy of a database at ``version`` is kept before an update."""
+    suffix = f".v{version}.bak" if attempt == 1 else f".v{version}.{attempt}.bak"
+    return path.with_name(path.name + suffix)
+
+
+def _stored_version(conn: sqlite3.Connection, path: Path) -> int | None:
+    """The schema version of the database, or None when it is still empty.
+
+    A database from a newer protas, or one whose version cannot be read,
+    is refused: this protas does not know its shape.
+    """
+    if not _table_exists(conn, "workspaces"):
+        return None
+
+    row = None
+    if _table_exists(conn, "meta"):
+        row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    if row is None:
+        # Workspaces without a number: the shape the baseline started with.
+        return BASELINE_VERSION
+
+    try:
+        version = int(row["value"])
+    except (TypeError, ValueError):
+        raise MigrationError(
+            f"{path} has schema version {row['value']!r}, which this protas cannot read. "
+            "The database was left untouched."
+        ) from None
+
+    if version > SCHEMA_VERSION:
+        raise MigrationError(
+            f"{path} was written by a newer protas: it is at version {version} and this "
+            f"protas understands up to version {SCHEMA_VERSION}. Update protas to open it. "
+            "The database was left untouched."
+        )
+    # Numbers below the baseline belong to the days before the workspaces.
+    return max(version, BASELINE_VERSION)
+
+
+def _stamp(conn: sqlite3.Connection, version: int) -> None:
     conn.execute(
         "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (str(SCHEMA_VERSION),),
+        (str(version),),
     )
-    conn.commit()
+
+
+@contextmanager
+def _all_or_nothing(conn: sqlite3.Connection) -> Iterator[None]:
+    """One transaction that holds the write lock from its first moment.
+
+    Whatever stops the block, Ctrl-C included, undoes everything and is
+    raised again as it was.
+    """
+    isolation_level = conn.isolation_level
+    conn.isolation_level = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            conn.execute("COMMIT")
+        except BaseException:
+            try:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                # The first error is the one worth reporting. SQLite undoes
+                # an open transaction by itself when the connection goes away.
+                pass
+            raise
+    finally:
+        try:
+            conn.isolation_level = isolation_level
+        except sqlite3.Error:
+            pass
+
+
+def _update(conn: sqlite3.Connection, path: Path, version: int) -> bool:
+    """Walk the steps from ``version`` to the current one, all or nothing.
+
+    Returns False when another protas changed the version meanwhile, so
+    the caller looks at the database again.
+    """
+    steps = []
+    for number in range(version, SCHEMA_VERSION):
+        step = MIGRATIONS.get(number)
+        if step is None:
+            raise MigrationError(
+                f"this protas does not know how to update version {number} of {path}. "
+                "The database was left untouched."
+            )
+        steps.append(step)
+
+    try:
+        backup = _backup(
+            conn,
+            path,
+            lambda attempt: version_backup_path(path, version, attempt),
+            _fingerprint,
+        )
+    except (OSError, sqlite3.Error) as error:
+        if _stored_version(conn, path) != version:
+            return False
+        raise MigrationError(
+            f"could not copy {path} before updating it: {error}. "
+            "The database was left untouched."
+        ) from error
+
+    try:
+        with _all_or_nothing(conn):
+            if _stored_version(conn, path) != version:
+                # Another protas updated it while this one waited for the lock.
+                return False
+            for step in steps:
+                step(conn)
+            _stamp(conn, SCHEMA_VERSION)
+    except MigrationError:
+        raise
+    except Exception as error:
+        raise MigrationError(
+            f"could not update {path} from version {version} to {SCHEMA_VERSION}: {error}. "
+            f"The database was left untouched and a copy is kept at {backup}."
+        ) from error
+    return True
+
+
+def _bring_up_to_date(conn: sqlite3.Connection, path: Path) -> None:
+    """Update an older database; refuse one this protas does not know."""
+    while True:
+        version = _stored_version(conn, path)
+        if version is None or version == SCHEMA_VERSION:
+            return
+        if _update(conn, path, version):
+            return
+
+
+def _stamp_current(conn: sqlite3.Connection) -> None:
+    """Write the version down when the database does not carry it yet."""
+    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    if row is None or row["value"] != str(SCHEMA_VERSION):
+        _stamp(conn, SCHEMA_VERSION)
+        conn.commit()
 
 
 def connect(path: Path | str | None = None) -> sqlite3.Connection:
@@ -535,27 +724,30 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
 
-    if _is_legacy(conn):
-        try:
+    try:
+        if _is_legacy(conn):
             _migrate_legacy(conn, target)
-        except BaseException:
-            # Nothing may keep the file locked after a failed migration.
-            conn.close()
-            raise
 
-    conn.executescript(SCHEMA)
+        # The steps run before SCHEMA: it describes the newest shape and
+        # must not be laid over a database that is still an older one.
+        _bring_up_to_date(conn, target)
 
-    _migrate(conn)
+        conn.executescript(SCHEMA)
+        _stamp_current(conn)
 
-    if fts5_available():
-        fresh_index = not _has_index(conn)
-        conn.executescript(SCHEMA_FTS)
-        if fresh_index:
-            # The index is new: it must cover the rows that came before it.
-            _rebuild_indexes(conn)
-        elif not _index_is_consistent(conn):
-            # Something wrote to the tables while the index was missing.
-            _rebuild_indexes(conn)
+        if fts5_available():
+            fresh_index = not _has_index(conn)
+            conn.executescript(SCHEMA_FTS)
+            if fresh_index:
+                # The index is new: it must cover the rows that came before it.
+                _rebuild_indexes(conn)
+            elif not _index_is_consistent(conn):
+                # Something wrote to the tables while the index was missing.
+                _rebuild_indexes(conn)
+    except BaseException:
+        # Nothing may keep the file locked after a failed start.
+        conn.close()
+        raise
 
     conn.commit()
     return conn
