@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "german-ds.protas",
   "name": "protas",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "german-ds",
   "license": "MIT",
-  "description": "Today's agenda from protas: pending work, the note of the day, and project progress. Read-only.",
+  "description": "Today's agenda from protas: pending work, the note of the day, and project progress. Click an entry to complete or reopen it.",
   "kinds": [
     "bar-widget"
   ],

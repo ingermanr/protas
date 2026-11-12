@@ -4,9 +4,10 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// protas bar widget + popup panel. It only reads: `protas list --all --json`
-// is a pure query, so polling it never creates or rolls a day. The single
-// action opens the TUI.
+// protas bar widget + popup panel. Polling uses `protas list --all --json`,
+// a pure query that never creates or rolls a day. Clicking an entry runs
+// `protas done|undone <id>`; project mentions are left to the TUI, because
+// completing one completes the whole project.
 Panel {
   id: root
   moduleName: "german-ds.protas"
@@ -24,6 +25,11 @@ Panel {
   property bool loaded: false
   property string errorText: ""
   property bool refreshQueued: false
+  // Id of the entry being written, or -1. One write at a time.
+  property int markingId: -1
+  // Kept apart from errorText: the refresh that follows a failed write
+  // would clear it before it could be read.
+  property string markError: ""
 
   readonly property var counts: agenda && agenda.counts ? agenda.counts : null
   readonly property var entries: agenda && agenda.entries ? agenda.entries : []
@@ -81,6 +87,20 @@ Panel {
     loaded = true
   }
 
+  function canMark(entry) {
+    return entry !== null && entry !== undefined
+      && entry.id !== undefined && entry.id !== null
+      && (entry.project_id === null || entry.project_id === undefined)
+  }
+
+  function toggleEntry(entry) {
+    if (!canMark(entry) || markingId !== -1 || markProc.running) return
+    markingId = entry.id
+    markError = ""
+    markProc.command = [root.cli, entry.done === true ? "undone" : "done", String(entry.id)]
+    markProc.running = true
+  }
+
   function openTui() {
     root.close()
     if (root.bar && typeof root.bar.run === "function") {
@@ -106,6 +126,15 @@ Panel {
         root.refreshQueued = false
         Qt.callLater(root.refresh)
       }
+    }
+  }
+
+  Process {
+    id: markProc
+    onExited: function(exitCode, exitStatus) {
+      root.markingId = -1
+      if (exitCode !== 0) root.markError = "No pude marcar la entrada."
+      root.refresh()
     }
   }
 
@@ -218,11 +247,11 @@ Panel {
 
           // ---------- Errors ----------
           Text {
-            visible: root.errorText !== ""
+            visible: text !== ""
             width: parent.width
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
-            text: root.errorText
+            text: root.markError !== "" ? root.markError : root.errorText
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -303,17 +332,38 @@ Panel {
   }
 
   // One entry: a marker, its text, and the progress when it is a project
-  // mention. Done entries stay visible but recede.
+  // mention. Done entries stay visible but recede. A click completes or
+  // reopens it; mentions do not react.
   component EntryRow: Item {
     id: row
     property var entry: null
     readonly property bool finished: entry !== null && entry.done === true
     readonly property int depth: entry !== null && entry.depth ? entry.depth : 0
     readonly property var progress: entry !== null && entry.progress ? entry.progress : null
+    readonly property bool markable: root.canMark(entry)
+    readonly property bool marking: entry !== null && root.markingId === entry.id
 
     width: parent ? parent.width : 0
     implicitHeight: Math.max(marker.implicitHeight, label.implicitHeight)
     height: implicitHeight
+    opacity: marking ? 0.5 : 1
+
+    Rectangle {
+      anchors.fill: parent
+      anchors.margins: -Style.space(2)
+      radius: Style.space(4)
+      color: root.foreground
+      opacity: rowMouse.containsMouse ? 0.08 : 0
+    }
+
+    MouseArea {
+      id: rowMouse
+      anchors.fill: parent
+      enabled: row.markable
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.toggleEntry(row.entry)
+    }
 
     Text {
       id: marker

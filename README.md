@@ -275,8 +275,10 @@ transacción y no debe hacer `commit` ni usar `executescript`.
 
 `integrations/omarchy/german-ds.protas/` es un widget para la barra de
 Omarchy: muestra cuántas entradas quedan pendientes hoy y, al abrirlo, la
-agenda del día con su nota y el avance de los proyectos mencionados. Solo
-lee (consulta `protas list --all --json`); su única acción es abrir la TUI.
+agenda del día con su nota y el avance de los proyectos mencionados.
+Un clic en una entrada la completa o la reabre (`protas done` /
+`protas undone`). Las menciones de proyecto no responden al clic:
+completar una completa el proyecto entero, y eso se hace desde la TUI.
 
 ```bash
 cp -r integrations/omarchy/german-ds.protas ~/.config/omarchy/plugins/
@@ -289,7 +291,9 @@ Espera el comando en `~/.local/bin/protas`. El intervalo de refresco
 
 ## Roadmap
 
-- Panel de Omarchy: marcar tareas desde el panel (hoy solo lee).
+- Instalación del panel de Omarchy: decidir si protas la ofrece como paso
+  opcional (desde la TUI o un comando) o si sigue siendo un complemento
+  aparte que se instala a mano con la guía de arriba.
 - Resultados de búsqueda dentro de la TUI, navegables.
 - Tareas recurrentes, prioridades y estimación de tiempo.
 - Exportación a Markdown (ya disponible) y a Obsidian.
