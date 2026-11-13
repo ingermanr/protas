@@ -36,7 +36,9 @@ su nota y sus tareas.
 ## Instalación
 
 protas no tiene dependencias: solo necesita **Python 3.11 o superior**.
-Revisa tu versión con `python3 --version`.
+Revisa tu versión con `python3 --version`. En Windows el comando suele ser
+`py` o `python` en lugar de `python3`: usa ese en los ejemplos de abajo
+(`py -m protas list`).
 
 ### Plataformas
 

@@ -100,3 +100,15 @@ user authorizes push, merge, release and the OPR PR. Test runner:
   `packaging/README.md` gives the release, local `makepkg -si` and
   omarchy-pkgs PR steps; the README links it and the Roadmap now lists only
   the OPR publication.
+- L7 (2026-11-13): independent verifier at `79ddca7` against `f1df9af`:
+  S1-S5 PASS, S6 PASS except the two documented scope differences (panel
+  not under `/usr/share/protas/`, `pacman -U` left to the user for sudo); no
+  blockers; 355 tests green in the repo and inside `makepkg` check(). Applied
+  advisories: `packaging/README.md` adds `"rebuild_on": ["python"]` (format
+  checked against `pkgbuilds/omareel/.omarchy/package.json`) and says it
+  cannot go on the fast ring; README tells Windows users to use `py` or
+  `python`. History rewritten before any push so `build/` never appears in a
+  commit. Not changed: the launch shell string breaks on an install path
+  with spaces (pre-existing); a custom bar position of the old panel is not
+  carried to the new id; `protas` without a TTY ends in a curses traceback
+  (pre-existing).

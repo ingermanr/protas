@@ -56,9 +56,15 @@ explica el proceso completo; en resumen:
    ```json
    {
      "source": "local",
-     "upstream": { "watch": { "github": "ingermanr/protas", "pattern": "v(?P<version>[0-9]+(?:\\.[0-9]+)*)" } }
+     "upstream": { "watch": { "github": "ingermanr/protas", "pattern": "v(?P<version>[0-9]+(?:\\.[0-9]+)*)" } },
+     "rebuild_on": ["python"]
    }
    ```
+
+   `rebuild_on` hace que el paquete se recompile cuando cambia la versión de
+   Python: protas se instala en `/usr/lib/python3.X/site-packages`, y sin
+   recompilar dejaría de encontrarse con el Python nuevo. Por lo mismo no va
+   en `"release_ring": "fast"`, que no se puede combinar con `rebuild_on`.
 
 4. Compruébalo y compílalo con sus herramientas:
 
