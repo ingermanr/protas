@@ -726,6 +726,24 @@ class TuiDetailsTest(unittest.TestCase):
         self.assertIn("sin prioridad", screens[3])
         self.assertIsNone(self.read(task_id).priority)
 
+    def test_the_bang_keeps_the_selection_on_the_same_task(self):
+        first_id = self.add_task("Comprar pan")
+        second_id = self.add_task("Llamar a mama")
+
+        code, _ = self.drive([b"j", b"!", b"!"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self.read(second_id).priority, 2)
+        self.assertIsNone(self.read(first_id).priority)
+
+    def test_an_empty_estimate_editor_clears_the_estimate(self):
+        task_id = self.add_task("Comprar pan", estimate=45)
+
+        code, _ = self.drive([b"E", b"\x7f\x7f\x7f\r"])
+
+        self.assertEqual(code, 0)
+        self.assertIsNone(self.read(task_id).estimate)
+
     def test_shift_e_edits_the_estimate(self):
         task_id = self.add_task("Comprar pan", priority=2)
 

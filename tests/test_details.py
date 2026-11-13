@@ -15,10 +15,15 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(parse_priority(" BAJA "), 3)
         self.assertEqual(parse_priority("sin prioridad"), None)
         self.assertEqual(parse_priority("ninguna"), None)
-        self.assertEqual(parse_priority(""), None)
 
     def test_a_priority_outside_the_three_is_refused(self):
         for value in ("urgente", "4", "alta media"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    parse_priority(value)
+
+    def test_an_empty_priority_is_refused(self):
+        for value in ("", "   "):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
                     parse_priority(value)
@@ -41,13 +46,19 @@ class ModelTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(parse_estimate(text), minutes)
         self.assertEqual(parse_estimate("ninguna"), None)
-        self.assertEqual(parse_estimate(""), None)
 
     def test_an_estimate_that_is_not_time_is_refused(self):
         for text in ("0", "0m", "media", "-5"):
             with self.subTest(text=text):
                 with self.assertRaises(ValueError):
                     parse_estimate(text)
+
+    def test_an_empty_estimate_or_a_priority_word_is_refused(self):
+        for text in ("", "   ", "sin prioridad"):
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError):
+                    parse_estimate(text)
+        self.assertEqual(parse_estimate("sin estimación"), None)
 
     def test_minutes_are_shown_as_time(self):
         self.assertEqual(format_estimate(30), "30m")

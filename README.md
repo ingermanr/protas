@@ -146,7 +146,10 @@ La estimación acepta `30`, `30m`, `1h`, `1h30` y `1.5h`, y se muestra como
 `30m`, `1h` o `1h 30m`. Las entradas con prioridad van primero, de alta a
 baja; las que no tienen conservan el orden manual. `protas list`,
 `protas show` y la TUI muestran los detalles al lado de la entrada. En la
-TUI, `!` recorre las prioridades y `E` abre el editor de la estimación.
+TUI, `!` recorre las prioridades y deja el cursor sobre la misma entrada, y
+`E` abre el editor de la estimación; dejarlo vacío la borra, igual que
+`ninguna`. En el CLI un valor vacío (`--priority ""`) es un error: para
+borrar se escribe `ninguna`.
 
 El arrastre copia la prioridad y la estimación junto con el texto, y
 `protas stats` suma lo estimado de cada día.

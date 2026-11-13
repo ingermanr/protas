@@ -567,8 +567,11 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                         store.set_text(editor.target_id, editor.text())
                         message = "tarea actualizada"
                     elif editor.kind == "estimate":
+                        # An empty editor clears the estimate, like "ninguna".
+                        text = editor.text().strip()
                         store.set_details(
-                            editor.target_id, estimate=parse_estimate(editor.text())
+                            editor.target_id,
+                            estimate=parse_estimate(text) if text else None,
                         )
                         message = "estimacion actualizada"
                     else:
@@ -699,6 +702,11 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 task, _ = rows[selection]
                 next_priority = {None: 1, 1: 2, 2: 3, 3: None}[task.priority]
                 store.set_details(task.id, priority=next_priority)
+                # The list re-sorts by priority: keep the cursor on this task.
+                rows = _flatten(store, workspace)
+                selection = next(
+                    (i for i, (t, _) in enumerate(rows) if t.id == task.id), selection
+                )
                 message = f"prioridad: {priority_label(next_priority) or 'sin prioridad'}"
             else:
                 message = "no hay ninguna entrada que priorizar"

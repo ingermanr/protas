@@ -45,6 +45,8 @@ because the user did not ask for it.
 - [x] T6 (S2): independent verification of the whole feature before merge.
   Route: delegated (Verification trigger, item 1). Verdict: S1-S5 PASS, no
   blockers (see L10).
+- [x] T7 (S1, S4): fix the verifier advisories 1-3. Route: inline. Commit: the
+  `fix(details)` commit after `08e40de` (see L11).
 
 ## Log
 
@@ -108,3 +110,14 @@ because the user did not ask for it.
   `--estimate "sin prioridad"` clears; (3) TUI selection stays on the index,
   not the task, after `!` re-sorts; (4) JSON always carries the new keys.
   T2 wording corrected: ordering is by priority, then manual position.
+- L11 (2026-11-13, user): "corrije primero las observaciones". T7 fixes the
+  three advisories, RED observed first for each: `cmd_stats` opens today
+  before computing the window, so the first `stats` of a day counts the
+  carried estimate; the CLI refuses an empty `--priority`/`--estimate` and
+  `parse_estimate` no longer takes priority words (it takes "sin estimacion"
+  instead); the TUI estimate editor still clears when left empty; `!` keeps
+  the cursor on the same task after the re-sort. Advisory 4 (JSON keys) stays
+  as accepted in L6. Differential against `08e40de`: only the first-call
+  "Hoy"/today row and the empty-value exit code differ. 342 tests green.
+  Gotcha: `python -m protas` from the repo root loads the working tree even
+  with PYTHONPATH pointing at a base copy; run the base from its own cwd.

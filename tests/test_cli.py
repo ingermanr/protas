@@ -405,6 +405,21 @@ class DetailsCommandTest(unittest.TestCase):
         _, out, _ = self.run_cli("list", "--date", "2026-11-11")
         self.assertIn("(alta)", out)
 
+    def test_set_refuses_an_empty_value_and_keeps_the_details(self):
+        task_id = self.add("Comprar pan", "--priority", "alta", "--estimate", "1h")
+
+        for flag, message in (
+            ("--priority", "no es una prioridad válida"),
+            ("--estimate", "no es una estimación válida"),
+        ):
+            with self.subTest(flag=flag):
+                code, out, err = self.run_cli("set", str(task_id), flag, "")
+                self.assertEqual(code, 1)
+                self.assertEqual(out, "")
+                self.assertIn(message, err)
+        _, out, _ = self.run_cli("list", "--date", "2026-11-11")
+        self.assertIn("(alta, 1h)", out)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -571,8 +571,10 @@ def cmd_history(store: Store, args) -> int:
 
 
 def cmd_stats(store: Store, args) -> int:
-    stats = store.stats(days=args.days)
+    # Opening today first carries the pending work in, so the window and the
+    # "Hoy" line count what today holds on the first call of the day too.
     today_counts = store.counts(store.open_day(today()).id)
+    stats = store.stats(days=args.days)
 
     if args.json:
         print(

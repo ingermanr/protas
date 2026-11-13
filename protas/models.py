@@ -18,7 +18,8 @@ ISO_FORMAT = "%Y-%m-%d"
 
 PRIORITY_LABELS = {1: "alta", 2: "media", 3: "baja"}
 PRIORITY_VALUES = {label: value for value, label in PRIORITY_LABELS.items()}
-NO_PRIORITY = {"", "none", "ninguna", "sin", "sin prioridad"}
+NO_PRIORITY = {"none", "ninguna", "sin", "sin prioridad"}
+NO_ESTIMATE = {"none", "ninguna", "sin", "sin estimacion"}
 _ESTIMATE_PATTERN = re.compile(r"^(?:(\d+(?:\.\d+)?)\s*h)?\s*(\d+)?\s*m?$")
 
 
@@ -42,7 +43,7 @@ def priority_label(value: Optional[int]) -> str:
 def parse_estimate(text: str) -> Optional[int]:
     """Minutes from 30, 30m, 1h, 1h30 or 1.5h. None clears it."""
     key = " ".join(normalize(text).split())
-    if key in NO_PRIORITY:
+    if key in NO_ESTIMATE:
         return None
     match = _ESTIMATE_PATTERN.fullmatch(key)
     hours = match.group(1) if match else None

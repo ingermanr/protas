@@ -240,6 +240,17 @@ class StatsCliTest(unittest.TestCase):
         self.assertIn("2h 30m estimadas", out)
         self.assertIn("2h 30m", out.split("Ritmo", 1)[1])
 
+    def test_the_first_stats_of_the_day_counts_the_carried_estimate(self):
+        self.run_cli("add", "Corta", "--date", day_offset(-1), "--estimate", "30m")
+        self.run_cli("add", "Larga", "--date", day_offset(-1), "--estimate", "2h")
+
+        code, out = self.run_cli("stats", "--days", "3")
+
+        self.assertEqual(code, 0)
+        self.assertIn("2h 30m estimadas", out)
+        today_row = [line for line in out.splitlines() if day_offset(0)[5:] in line]
+        self.assertTrue(any("2h 30m" in line for line in today_row), out)
+
     def test_the_json_carries_the_estimate_of_each_day(self):
         import json
 
