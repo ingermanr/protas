@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=protas
+GenericName=Notes and tasks
+GenericName[es]=Notas y tareas
+Comment=Daily notes and tasks: one workspace per day, pending work rolls forward
+Comment[es]=Notas y tareas del día: un espacio de trabajo por día, lo pendiente se arrastra
+Exec=protas
+Icon=protas
+Terminal=true
+Categories=Office;ProjectManagement;ConsoleOnly;
+Keywords=tasks;notes;todo;projects;agenda;tareas;notas;proyectos;
