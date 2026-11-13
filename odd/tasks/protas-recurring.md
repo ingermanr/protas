@@ -92,4 +92,13 @@ task that was deleted does not come back the same day.
   lenses) with eight informational advisories, none blocking. 296 tests
   green. Still open: reopening a past recurring task after its successor
   was born leaves two pending.
-
+- L8 (2026-11-13, user): "dale, corrige el error de las recurrentes". Fixed
+  on `fix/reopen-recurring`: reproduced first (daily rule, yesterday's task
+  done, today's born, yesterday's reopened, today opened again: two pending
+  "Leer" today). `rollover` now skips an entry that descends from a rule
+  (`_recurrence_of` follows `origin_id` back to the ledger) when the target
+  day already holds a pending task of that rule (`_recurrence_task_in` with
+  `pending_only=True`). The reopened task stays pending in its own day; if
+  today's task is already done, the reopened one is carried as usual. RED
+  observed for the two duplicate cases; 358 tests green. README documents
+  "a lo sumo una pendiente por regla".

@@ -124,6 +124,53 @@ class SpawnTest(RecurringCase):
         self.assertFalse(self.store.is_done(tasks[0]))
         self.assertIsNone(tasks[0].origin_id)
 
+    def reopen_monday_after_tuesday_was_born(self, finish_tuesday=False):
+        """Monday's task done, Tuesday gets its own, Monday's is reopened."""
+        self.store.add_recurrence("Regar las plantas", "day")
+        monday = self.live(MONDAY)
+        first = self.store.tasks_of(monday.id)[0]
+        self.store.set_done(first.id)
+        tuesday = self.live(TUESDAY)
+        second = self.store.tasks_of(tuesday.id)[0]
+        if finish_tuesday:
+            self.store.set_done(second.id)
+        self.store.set_done(first.id, False)
+        return first, second
+
+    def pending(self, day):
+        workspace = self.store.day(day)
+        return [
+            task.text
+            for task in self.store.tasks_of(workspace.id)
+            if not self.store.is_done(task)
+        ]
+
+    def test_reopening_an_old_task_does_not_add_a_second_pending_one(self):
+        first, _ = self.reopen_monday_after_tuesday_was_born()
+
+        self.live(TUESDAY)
+
+        self.assertEqual(self.pending(TUESDAY), ["Regar las plantas"])
+        # The reopened one stays pending where it was, as a record.
+        self.assertFalse(self.store.is_done(self.store.task(first.id)))
+
+    def test_the_next_day_still_gets_one_pending_task(self):
+        self.reopen_monday_after_tuesday_was_born()
+        self.live(TUESDAY)
+
+        self.live(WEDNESDAY)
+
+        self.assertEqual(self.pending(WEDNESDAY), ["Regar las plantas"])
+
+    def test_a_reopened_task_is_carried_when_the_day_has_none_pending(self):
+        first, _ = self.reopen_monday_after_tuesday_was_born(finish_tuesday=True)
+
+        tuesday = self.live(TUESDAY)
+
+        self.assertEqual(self.pending(TUESDAY), ["Regar las plantas"])
+        origins = [task.origin_id for task in self.store.tasks_of(tuesday.id)]
+        self.assertIn(first.id, origins)
+
     def test_days_that_were_never_opened_leave_no_backlog(self):
         self.store.add_recurrence("Regar las plantas", "day")
 

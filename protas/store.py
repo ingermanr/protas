@@ -753,6 +753,13 @@ class Store:
             ):
                 # The day already has this project on its agenda.
                 continue
+            rule_id = self._recurrence_of(source["id"])
+            if rule_id is not None and self._recurrence_task_in(
+                rule_id, target_workspace.id, pending_only=True
+            ) is not None:
+                # A day holds one pending task per rule. An older task of
+                # the rule that was reopened stays pending where it is.
+                continue
             # The trip is written down before the copy is made. The ledger
             # takes one row per entry and day, so when two protas carry at
             # once the second one waits here, finds the trip taken and
@@ -836,13 +843,16 @@ class Store:
             self.conn.commit()
         return spawned
 
-    def _recurrence_task_in(self, recurrence_id: int, workspace_id: int) -> int | None:
+    def _recurrence_task_in(
+        self, recurrence_id: int, workspace_id: int, pending_only: bool = False
+    ) -> int | None:
         """The entry of a workspace that descends from a task of the rule.
 
         A carried copy points at its source through ``origin_id``, so the
         tasks of a rule are the ones it made plus everything copied from
-        them.
+        them. ``pending_only`` leaves out the ones already done.
         """
+        pending = " AND t.done = 0" if pending_only else ""
         row = self.conn.execute(
             """WITH RECURSIVE line(id) AS (
                    SELECT task_id FROM recurrence_tasks
@@ -851,10 +861,27 @@ class Store:
                    SELECT t.id FROM tasks t JOIN line ON t.origin_id = line.id
                )
                SELECT t.id FROM tasks t JOIN line ON line.id = t.id
-               WHERE t.workspace_id = ? ORDER BY t.id DESC LIMIT 1""",
+               WHERE t.workspace_id = ?"""
+            + pending
+            + " ORDER BY t.id DESC LIMIT 1",
             (recurrence_id, workspace_id),
         ).fetchone()
         return row["id"] if row is not None else None
+
+    def _recurrence_of(self, task_id: int) -> int | None:
+        """The rule an entry comes from, following its copies back to the
+        task the rule made; None for an entry no rule made."""
+        row = self.conn.execute(
+            """WITH RECURSIVE up(id, origin_id) AS (
+                   SELECT id, origin_id FROM tasks WHERE id = ?
+                   UNION
+                   SELECT t.id, t.origin_id FROM tasks t JOIN up ON t.id = up.origin_id
+               )
+               SELECT rt.recurrence_id FROM recurrence_tasks rt
+               JOIN up ON rt.task_id = up.id LIMIT 1""",
+            (task_id,),
+        ).fetchone()
+        return row["recurrence_id"] if row is not None else None
 
     def _recurrence(self, recurrence_id: int) -> Optional[Recurrence]:
         row = self.conn.execute(

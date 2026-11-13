@@ -254,6 +254,9 @@ Los días de la semana se escriben en español o en inglés (`lun,jue` o
 - Si no la completas, se arrastra como cualquier pendiente, y mientras
   siga pendiente la regla no crea otra.
 - Si la borras, no vuelve ese día.
+- Un día tiene a lo sumo una pendiente por regla: si reabres una de un día
+  anterior cuando hoy ya tiene la suya pendiente, la reabierta queda
+  pendiente en su día y no se duplica en hoy.
 - Quitar una regla deja intactas las tareas que ya creó.
 
 En la TUI se ven y se marcan como cualquier otra tarea. `R` abre la lista
