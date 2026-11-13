@@ -95,6 +95,43 @@ class SchemaV4Test(unittest.TestCase):
         self.assertIn("from version 3 to 4", notices[0])
         self.assertIn(str(copy), notices[0])
 
+    def doctor(self):
+        import contextlib
+        import io
+
+        from protas import cli
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(["--db", str(self.db), "doctor"])
+        return code, out.getvalue()
+
+    def test_doctor_finds_a_new_database_healthy(self):
+        Store(path=self.db).close()
+
+        code, out = self.doctor()
+
+        self.assertEqual(code, 0)
+        self.assertIn("schema:       version 4, up to date\n", out)
+        self.assertIn("integrity:    ok\n", out)
+        self.assertIn("copies:       none\n", out)
+
+    def test_doctor_reports_a_version_3_database_and_then_its_copy(self):
+        self.build_version_3()
+
+        code, out = self.doctor()
+        self.assertEqual(code, 0)
+        self.assertIn(
+            "schema:       version 3, it will be updated to 4 when protas opens it\n", out
+        )
+        self.assertEqual(self.version(), [("3",)])
+
+        Store(path=self.db).close()
+        code, out = self.doctor()
+        self.assertEqual(code, 0)
+        self.assertIn("schema:       version 4, up to date\n", out)
+        self.assertIn("copies:       protas.db.v3.bak\n", out)
+
     def test_an_updated_database_opens_again_without_another_copy(self):
         self.build_version_3()
         Store(path=self.db).close()

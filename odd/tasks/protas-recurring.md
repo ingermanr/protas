@@ -34,12 +34,12 @@ task that was deleted does not come back the same day.
 
 ## Tasks
 
-- [ ] T1 (S8): schema 4 adds `recurrences` and `recurrence_tasks`; step 3→4
+- [x] T1 (S8, commit de2698b, native review approved and acknowledged): schema 4 adds `recurrences` and `recurrence_tasks`; step 3→4
   registered; the move from days keeps the frozen version 3 shape. Route:
   inline. Risk: item 1 (schema migration), own commit.
-- [ ] T2 (S1-S5, S7): patterns in `rules`, rules and spawning in `Store`,
+- [x] T2 (S1-S5, S7): patterns in `rules`, rules and spawning in `Store`,
   wired into `open_day`. Route: inline.
-- [ ] T3 (S6): `protas recur add|list|rm`, help and README. Route: inline.
+- [x] T3 (S6): `protas recur add|list|rm`, help and README. Route: inline.
 - [ ] T4 (S8): independent verification of the whole feature before merge.
   Route: delegated (Verification trigger, item 1).
 
@@ -60,3 +60,11 @@ task that was deleted does not come back the same day.
   the step existed in the working tree (copy kept as `protas.db.v3.bak`,
   same row counts). Until this branch is merged, `main` refuses that
   database as newer.
+- L5 (2026-11-12): T2 and T3 done in one commit. 288 tests pass. RED was
+  observed for every new test file before the code existed. Differential
+  check against `main` on a seeded database (show, list, list --json,
+  projects, history, search, stats --json, export): identical output.
+  Native review of T1 left advisories: the doctor command on a version 4
+  database had no test (added in `tests/test_schema_v4.py`); the pin helper
+  and a shared fixture are noted, not changed.
+

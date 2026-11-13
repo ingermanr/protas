@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from . import text
+from . import rules, text
 from . import __version__, db
 from .db import MigrationError
 from .store import Store, Task, Workspace, check_date, describe_event, today
@@ -79,6 +79,20 @@ def build_parser() -> argparse.ArgumentParser:
     mention.add_argument("--date", default=None, help="day as YYYY-MM-DD (default: today)")
 
     sub.add_parser("projects", help="list every project")
+
+    recur = sub.add_parser("recur", help="manage recurring tasks")
+    recur_sub = recur.add_subparsers(dest="recur_command")
+    recur_add = recur_sub.add_parser("add", help="add a recurring task")
+    recur_add.add_argument("text")
+    recur_add.add_argument(
+        "--every",
+        required=True,
+        help="day, days of the week (lun,jue or mon,thu) or a day of the month (15)",
+    )
+    recur_list = recur_sub.add_parser("list", help="list the recurring tasks (default)")
+    recur_list.add_argument("--json", action="store_true", help="machine readable output")
+    recur_rm = recur_sub.add_parser("rm", help="remove a recurring task; its tasks stay")
+    recur_rm.add_argument("id", type=int)
 
     stats = sub.add_parser("stats", help="numbers of the last days")
     stats.add_argument("--days", type=int, default=14, help="size of the window")
@@ -415,6 +429,40 @@ def cmd_projects(store: Store, args) -> int:
     return 0
 
 
+def cmd_recur(store: Store, args) -> int:
+    if args.recur_command == "add":
+        print(store.add_recurrence(args.text, args.every).id)
+        return 0
+    if args.recur_command == "rm":
+        store.remove_recurrence(args.id)
+        return 0
+
+    recurrences = store.recurrences()
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                [
+                    {
+                        "id": rule.id,
+                        "text": rule.text,
+                        "pattern": rule.pattern,
+                        "every": rules.describe_recurrence(rule.pattern),
+                    }
+                    for rule in recurrences
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    if not recurrences:
+        print("no hay tareas recurrentes")
+        return 0
+    for rule in recurrences:
+        print(f"{rule.id}  {rules.describe_recurrence(rule.pattern)}  {rule.text}")
+    return 0
+
+
 def cmd_history(store: Store, args) -> int:
     history = store.history(args.id)
 
@@ -677,6 +725,7 @@ COMMANDS = {
     "stats": cmd_stats,
     "history": cmd_history,
     "export": cmd_export,
+    "recur": cmd_recur,
     "search": cmd_search,
 }
 

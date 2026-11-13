@@ -38,6 +38,7 @@ from .models import (  # noqa: F401
     ProjectHistory,
     ProjectRef,
     ProjectStat,
+    Recurrence,
     Stats,
     Task,
     Workspace,
@@ -165,6 +166,9 @@ class Store:
         day = self.ensure_day(date_str)
         if date_str == today():
             self.rollover(date_str)
+            # After the carry: a rule whose earlier task just arrived is
+            # linked to that copy instead of getting a second one.
+            self.spawn_recurring(date_str)
         return day
 
     def discard_if_empty(self, workspace_id: int) -> bool:
@@ -655,6 +659,101 @@ class Store:
 
         self.conn.commit()
         return carried
+
+    # ------------------------------------------------------------------
+    # recurring tasks
+    # ------------------------------------------------------------------
+    def add_recurrence(self, text: str, every: str) -> Recurrence:
+        """Create a rule. ``every`` is what the user typed: day, lun,jue or 15."""
+        text = text.strip()
+        if not text:
+            raise ValueError("una tarea recurrente necesita un texto")
+        pattern = rules.parse_recurrence(every)
+        cursor = self.conn.execute(
+            "INSERT INTO recurrences (text, pattern, created_at) VALUES (?, ?, ?)",
+            (text, pattern, _now()),
+        )
+        self.conn.commit()
+        return self._recurrence(cursor.lastrowid)
+
+    def recurrences(self) -> list[Recurrence]:
+        rows = self.conn.execute("SELECT * FROM recurrences ORDER BY id").fetchall()
+        return [self._to_recurrence(row) for row in rows]
+
+    def remove_recurrence(self, recurrence_id: int) -> None:
+        """Forget a rule. The tasks it already made stay where they are."""
+        if self._recurrence(recurrence_id) is None:
+            raise ValueError(f"recurring task {recurrence_id} does not exist")
+        self.conn.execute("DELETE FROM recurrences WHERE id = ?", (recurrence_id,))
+        self.conn.commit()
+
+    def spawn_recurring(self, date_str: str | None = None) -> list[int]:
+        """Give ``date_str`` the tasks of the rules that fire on it.
+
+        Returns the ids of the tasks that were created. Each rule is
+        settled once per day: asking again changes nothing, and a task
+        that was deleted does not come back. A rule whose earlier task is
+        still pending, and was carried into this day, keeps that one.
+        """
+        date_str = date_str or today()
+        check_date(date_str)
+        day = self.ensure_day(date_str)
+        when = Date.fromisoformat(date_str)
+
+        spawned: list[int] = []
+        for rule in self.recurrences():
+            if not rules.recurrence_fires(rule.pattern, when):
+                continue
+            settled = self.conn.execute(
+                "SELECT 1 FROM recurrence_tasks WHERE recurrence_id = ? AND date = ?",
+                (rule.id, date_str),
+            ).fetchone()
+            if settled is not None:
+                continue
+
+            task_id = self._recurrence_task_in(rule.id, day.id)
+            if task_id is None:
+                task_id = self.add_task(rule.text, day.id).id
+                spawned.append(task_id)
+            self.conn.execute(
+                "INSERT OR IGNORE INTO recurrence_tasks (recurrence_id, date, task_id) "
+                "VALUES (?, ?, ?)",
+                (rule.id, date_str, task_id),
+            )
+        self.conn.commit()
+        return spawned
+
+    def _recurrence_task_in(self, recurrence_id: int, workspace_id: int) -> int | None:
+        """The entry of a workspace that descends from a task of the rule.
+
+        A carried copy points at its source through ``origin_id``, so the
+        tasks of a rule are the ones it made plus everything copied from
+        them.
+        """
+        row = self.conn.execute(
+            """WITH RECURSIVE line(id) AS (
+                   SELECT task_id FROM recurrence_tasks
+                   WHERE recurrence_id = ? AND task_id IS NOT NULL
+                   UNION
+                   SELECT t.id FROM tasks t JOIN line ON t.origin_id = line.id
+               )
+               SELECT t.id FROM tasks t JOIN line ON line.id = t.id
+               WHERE t.workspace_id = ? ORDER BY t.id DESC LIMIT 1""",
+            (recurrence_id, workspace_id),
+        ).fetchone()
+        return row["id"] if row is not None else None
+
+    def _recurrence(self, recurrence_id: int) -> Optional[Recurrence]:
+        row = self.conn.execute(
+            "SELECT * FROM recurrences WHERE id = ?", (recurrence_id,)
+        ).fetchone()
+        return self._to_recurrence(row) if row is not None else None
+
+    @staticmethod
+    def _to_recurrence(row: sqlite3.Row) -> Recurrence:
+        return Recurrence(
+            id=row["id"], text=row["text"], pattern=row["pattern"], created_at=row["created_at"]
+        )
 
     def _already_mentioned(self, project_id: int, workspace_id: int) -> bool:
         row = self.conn.execute(

@@ -104,6 +104,8 @@ protas promote 6                # la tarea pasa a ser un proyecto
 protas mention 3 --date 2026-11-12
 protas roll --to 2026-11-12
 protas projects
+protas recur add "Regar las plantas" --every lun,jue   # tarea recurrente
+protas recur list
 protas history 3               # la historia del proyecto
 protas export --out ./protas-export
 protas export --format obsidian --out ~/Boveda/protas   # notas para Obsidian
@@ -120,6 +122,32 @@ pendiente, así que un panel puede consultarlo cada pocos segundos sin
 cambiar la base. Devuelve el espacio (`workspace`), los totales
 (`counts`), la nota (`note`) y las entradas (`entries`) con su
 profundidad, su origen y, en las menciones, el avance del proyecto.
+
+### Tareas recurrentes
+
+Una regla crea su tarea en los días que nombra:
+
+```bash
+protas recur add "Revisar el correo" --every day       # todos los días
+protas recur add "Regar las plantas" --every lun,jue   # días de la semana
+protas recur add "Pagar el alquiler" --every 5         # día del mes
+protas recur list                                      # reglas con su número
+protas recur rm 2                                      # quita la regla
+```
+
+Los días de la semana se escriben en español o en inglés (`lun,jue` o
+`mon,thu`). Un día que el mes no tiene, como el 31 en febrero, cae en el
+último día de ese mes.
+
+- La tarea nace al abrir **hoy**, igual que el arrastre: un día que no
+  abriste no deja tareas atrasadas.
+- Si no la completas, se arrastra como cualquier pendiente, y mientras
+  siga pendiente la regla no crea otra.
+- Si la borras, no vuelve ese día.
+- Quitar una regla deja intactas las tareas que ya creó.
+
+En la TUI se ven y se marcan como cualquier otra tarea; las reglas se
+gestionan con `protas recur`.
 
 ### Exportar a Obsidian
 
@@ -324,9 +352,10 @@ se reconstruye al abrir la base.
 
 ### Agregar un cambio de esquema
 
-En `protas/db.py`: cambia `SCHEMA` (lo que recibe una base nueva), sube
-`SCHEMA_VERSION` y registra en `MIGRATIONS` el paso que lleva una base de
-la versión anterior a la nueva. El paso recibe la conexión dentro de la
+En `protas/db.py`: agrega lo nuevo a `SCHEMA` (lo que recibe una base
+nueva) sin tocar `SCHEMA_V3`, que es la forma congelada de la que parten
+los pasos; sube `SCHEMA_VERSION` y registra en `MIGRATIONS` el paso que
+lleva una base de la versión anterior a la nueva. El paso recibe la conexión dentro de la
 transacción y no debe hacer `commit` ni usar `executescript`.
 
 ## Panel de Omarchy
@@ -358,7 +387,8 @@ código está en `protas/integrations/omarchy/german-ds.protas/`.
 
 ## Roadmap
 
-- Tareas recurrentes, prioridades y estimación de tiempo.
+- Prioridades y estimación de tiempo.
+- Crear y quitar tareas recurrentes desde la TUI.
 
 ## Licencia
 

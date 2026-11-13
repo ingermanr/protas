@@ -82,6 +82,17 @@ class Task:
 
 
 @dataclass
+class Recurrence:
+    """A rule that creates a task on the days it names."""
+
+    id: int
+    text: str
+    # "daily", "weekly:0,3" (Monday is 0) or "monthly:15"
+    pattern: str
+    created_at: str
+
+
+@dataclass
 class ProjectRef:
     """A project seen from the project list."""
 

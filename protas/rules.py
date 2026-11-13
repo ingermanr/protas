@@ -7,7 +7,9 @@ where they can be read and tested on their own.
 
 from __future__ import annotations
 
+import calendar
 from collections import defaultdict
+from datetime import date as Date
 from typing import Callable, Mapping, Sequence
 
 
@@ -84,3 +86,85 @@ def lineage_heads(rows: Sequence[Mapping]) -> list[Mapping]:
             taken.add(head["id"])
             heads.append(head)
     return heads
+
+
+# ----------------------------------------------------------------------
+# recurring tasks
+# ----------------------------------------------------------------------
+WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+
+_DAILY_WORDS = frozenset({"day", "daily", "dia", "día", "diario", "diaria"})
+
+_WEEKDAY_WORDS = {
+    word: number
+    for number, words in enumerate(
+        (
+            ("lun", "lunes", "mon", "monday"),
+            ("mar", "martes", "tue", "tuesday"),
+            ("mie", "mié", "miercoles", "miércoles", "wed", "wednesday"),
+            ("jue", "jueves", "thu", "thursday"),
+            ("vie", "viernes", "fri", "friday"),
+            ("sab", "sáb", "sabado", "sábado", "sat", "saturday"),
+            ("dom", "domingo", "sun", "sunday"),
+        )
+    )
+    for word in words
+}
+
+
+def parse_recurrence(spec: str) -> str:
+    """Turn what the user typed into the pattern that is stored.
+
+    ``day`` is every day, ``lun,jue`` (or ``mon,thu``) the days of the
+    week, and a number from 1 to 31 the day of the month.
+    """
+    cleaned = spec.strip().lower()
+    if cleaned in _DAILY_WORDS:
+        return "daily"
+
+    if cleaned.isdigit():
+        if 1 <= int(cleaned) <= 31:
+            return f"monthly:{int(cleaned)}"
+    else:
+        words = cleaned.replace(",", " ").split()
+        if words and all(word in _WEEKDAY_WORDS for word in words):
+            days = sorted({_WEEKDAY_WORDS[word] for word in words})
+            return "weekly:" + ",".join(str(day) for day in days)
+
+    raise ValueError(
+        f"no entiendo «{spec}» como repetición: usa day, días de la semana"
+        " como lun,jue o un día del mes como 15"
+    )
+
+
+def recurrence_fires(pattern: str, day: Date) -> bool:
+    """Whether a stored pattern names ``day``.
+
+    A day of the month that a shorter month does not have fires on the
+    last day of that month, so a rule for the 31 never skips a month.
+    """
+    kind, _, detail = pattern.partition(":")
+    if kind == "daily":
+        return True
+    if kind == "weekly":
+        return str(day.weekday()) in detail.split(",")
+    if kind == "monthly":
+        last = calendar.monthrange(day.year, day.month)[1]
+        return day.day == min(int(detail), last)
+    return False
+
+
+def describe_recurrence(pattern: str) -> str:
+    """A stored pattern in words, for listings."""
+    kind, _, detail = pattern.partition(":")
+    if kind == "daily":
+        return "cada día"
+    if kind == "weekly":
+        names = [WEEKDAYS[int(number)] for number in detail.split(",")]
+        if len(names) == 1:
+            return names[0]
+        return ", ".join(names[:-1]) + " y " + names[-1]
+    if kind == "monthly":
+        return f"el día {detail} de cada mes"
+    return pattern
+
