@@ -95,12 +95,12 @@ user authorizes push, merge, release and the OPR PR. Test runner:
   a `git archive` of HEAD: 355 tests green inside check(), the package holds
   `/usr/bin/protas`, site-packages, the desktop entry, icon and license, and
   the packaged `protas` runs `version`, `add` and `list`. The first build
-  showed `build/` committed by mistake in `7494c47` (from `uv tool install .`
-  in the repo); `d6ea2d8` untracks it and ignores `build/` and `dist/`.
+  showed `build/` committed by mistake in `90472bb` (from `uv tool install .`
+  in the repo); `07beabf` untracks it and ignores `build/` and `dist/`.
   `packaging/README.md` gives the release, local `makepkg -si` and
   omarchy-pkgs PR steps; the README links it and the Roadmap now lists only
   the OPR publication.
-- L7 (2026-11-13): independent verifier at `79ddca7` against `f1df9af`:
+- L7 (2026-11-13): independent verifier at `3ed1e79` against `f1df9af`:
   S1-S5 PASS, S6 PASS except the two documented scope differences (panel
   not under `/usr/share/protas/`, `pacman -U` left to the user for sudo); no
   blockers; 355 tests green in the repo and inside `makepkg` check(). Applied
