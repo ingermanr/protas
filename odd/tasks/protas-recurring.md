@@ -40,7 +40,7 @@ task that was deleted does not come back the same day.
 - [x] T2 (S1-S5, S7): patterns in `rules`, rules and spawning in `Store`,
   wired into `open_day`. Route: inline.
 - [x] T3 (S6): `protas recur add|list|rm`, help and README. Route: inline.
-- [ ] T4 (S8): independent verification of the whole feature before merge.
+- [x] T4 (S8, verified at d8c34f4): independent verification of the whole feature before merge.
   Route: delegated (Verification trigger, item 1).
 
 ## Log
@@ -67,4 +67,16 @@ task that was deleted does not come back the same day.
   Native review of T1 left advisories: the doctor command on a version 4
   database had no test (added in `tests/test_schema_v4.py`); the pin helper
   and a shared fixture are noted, not changed.
+- L6 (2026-11-12): T4. Independent verifier at 96c618a against e171acc: S1-S3
+  and S5-S8 PASS, including the real 3 to 4 update (row hashes identical,
+  `.v3.bak` kept at version 3, one notice, no second copy, baseline refuses
+  the updated file untouched, six simultaneous openers make one copy). One
+  blocker on S4: two protas opening today at once could spawn the task
+  twice (8 of 40 rounds with two processes). Fixed in d8c34f4 by claiming
+  the ledger row before creating the task. Recheck by the same verifier:
+  FIXED, 0 of 60 rounds with two processes and 0 of 40 with eight; suite 289
+  OK. Advisories left open, both present at the baseline: simultaneous
+  opens can duplicate a carried task, and `ensure_day` can raise
+  IntegrityError in the losing process (data intact). Also open: reopening
+  a past recurring task after its successor was born leaves two pending.
 
