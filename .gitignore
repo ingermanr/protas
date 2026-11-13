@@ -9,3 +9,9 @@ protas-export/
 .atl/
 build/
 dist/
+
+# makepkg output in packaging/
+packaging/src/
+packaging/pkg/
+packaging/*.tar.gz
+packaging/*.pkg.tar.zst

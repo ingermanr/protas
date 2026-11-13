@@ -42,6 +42,24 @@ protas version
 `python-installer`, `python-setuptools`, `python-wheel`) y pide la
 contraseña para eso. Para quitarlo: `sudo pacman -R protas`.
 
+Si usas un gestor de versiones de Python (mise, pyenv, asdf) que pone su
+`python` antes que el del sistema en el `PATH`, la compilación falla con
+`No module named build`: las herramientas de compilación se instalan en el
+Python del sistema, pero `makepkg` corre el otro. Pon `/usr/bin` primero
+solo para ese comando:
+
+```bash
+PATH=/usr/bin:$PATH makepkg -si
+```
+
+El paquete instalado usa `/usr/bin/python`, así que después funciona aunque
+el gestor siga primero en tu `PATH`.
+
+Si tenías protas instalado con `pip`, `uv` o `pipx`, desinstálalo antes:
+el comando en `~/.local/bin` va antes que `/usr/bin` y taparía al del
+paquete. Después corre `protas omarchy install` para que el panel use el
+comando del paquete. Tus datos no se tocan.
+
 ## Proponerlo al repositorio de paquetes de Omarchy
 
 Los paquetes que se instalan con `omarchy pkg add` viven en
