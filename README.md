@@ -15,6 +15,7 @@
   <img src="https://img.shields.io/badge/datos-SQLite%20local-1f7a6d" alt="Datos en SQLite local">
   <img src="https://img.shields.io/badge/interfaz-CLI%20%2B%20TUI-1f7a6d" alt="Interfaz de línea de comandos y TUI">
   <img src="https://img.shields.io/badge/Omarchy-panel%20opcional-1f7a6d" alt="Panel opcional para Omarchy">
+  <img src="https://img.shields.io/badge/licencia-MIT-1f7a6d" alt="Licencia MIT">
 </p>
 
 <p align="center">
@@ -358,3 +359,7 @@ código está en `protas/integrations/omarchy/german-ds.protas/`.
 ## Roadmap
 
 - Tareas recurrentes, prioridades y estimación de tiempo.
+
+## Licencia
+
+MIT. El texto completo está en [LICENSE](LICENSE).
