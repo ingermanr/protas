@@ -40,7 +40,7 @@ because the user did not ask for it.
   `E` edits the estimate; help updated. Route: inline.
 - [x] T4 (S1): commit `51570f3`. `stats` sums the estimate of each day in text, JSON and the TUI.
   Route: inline.
-- [ ] T5 (S5): README documents the new options, command and keys. Route:
+- [x] T5 (S5): commit `PENDING-T5`. README documents the new options, command and keys. Route:
   inline.
 - [ ] T6 (S2): independent verification of the whole feature before merge.
   Route: delegated (Verification trigger, item 1).
@@ -89,3 +89,9 @@ because the user did not ask for it.
   total next to the day and in the "Hoy" line, the JSON carries
   `estimate_minutes` per day, and the TUI draws the same number. A database
   without the columns reads `NULL` and the estimate is zero.
+- L9 (2026-11-12): T5 done in `PENDING-T5`. README: keys table gains `!` and
+  `E`, the commands block shows `add --priority/--estimate` and `protas set`,
+  a "Prioridad y estimación" section documents the accepted formats, the
+  ordering and the clear-with-`ninguna`, the statistics sample shows the
+  estimate of the day, and the data model says the columns are optional and
+  that the rollover copies them.

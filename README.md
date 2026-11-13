@@ -72,6 +72,8 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `A` | nueva subtarea (promueve la tarea a proyecto si hace falta) |
 | `p` | promover la tarea a proyecto |
 | `e` | editar el texto |
+| `!` | cambiar la prioridad: alta, media, baja o sin prioridad |
+| `E` | editar la estimación en minutos |
 | `n` | editar la nota: `↑`/`↓` cambian de línea, `Enter` abre una línea, `Ctrl-S` guarda, `Esc` cancela |
 | `x` | borrar la entrada |
 | `/` | buscar; en los resultados, `j`/`k` mueven, `enter` abre y `esc` vuelve |
@@ -93,7 +95,10 @@ dejarle lugar.
 
 ```bash
 protas add "Preparar la reunion" --date 2026-11-11
+protas add "Preparar la reunion" --priority alta --estimate 1h30
 protas add "Esquema de la tabla" --project 3
+protas set 6 --priority media --estimate 45m
+protas set 6 --priority ninguna        # la deja sin prioridad
 protas list --date 2026-11-11
 protas list --all --json        # el día como datos, para otras herramientas
 protas done 6
@@ -121,7 +126,30 @@ con un error y no crea ningún día.
 pendiente, así que un panel puede consultarlo cada pocos segundos sin
 cambiar la base. Devuelve el espacio (`workspace`), los totales
 (`counts`), la nota (`note`) y las entradas (`entries`) con su
-profundidad, su origen y, en las menciones, el avance del proyecto.
+profundidad, su origen, su prioridad y sus minutos estimados, y en las
+menciones, el avance del proyecto.
+
+### Prioridad y estimación
+
+Cada entrada puede llevar una prioridad (`alta`, `media`, `baja`) y los
+minutos que estimas que lleva:
+
+```bash
+protas add "Preparar la reunion" --priority alta --estimate 1h30
+protas set 6 --priority media          # cambia solo la prioridad
+protas set 6 --estimate 45m            # cambia solo la estimacion
+protas set 6 --priority ninguna        # la deja sin prioridad
+protas set 6 --estimate ninguna        # le quita la estimacion
+```
+
+La estimación acepta `30`, `30m`, `1h`, `1h30` y `1.5h`, y se muestra como
+`30m`, `1h` o `1h 30m`. Las entradas con prioridad van primero, de alta a
+baja; las que no tienen conservan el orden manual. `protas list`,
+`protas show` y la TUI muestran los detalles al lado de la entrada. En la
+TUI, `!` recorre las prioridades y `E` abre el editor de la estimación.
+
+El arrastre copia la prioridad y la estimación junto con el texto, y
+`protas stats` suma lo estimado de cada día.
 
 ### Tareas recurrentes
 
@@ -205,11 +233,11 @@ proyectos y la racha.
 ```
 $ protas stats
 Hoy
-  3 pendientes | 1 hechas | 2 proyectos
+  3 pendientes | 1 hechas | 2 proyectos | 3h estimadas
 
 Ritmo (ultimos 14 dias)
-  2026-10-29  ################         2
-  2026-10-30  ################         2
+  2026-10-29  ################         2  3h
+  2026-10-30  ################         2  2h 30m
   ...
   31 completadas | 2.2 por dia activo | 14 dias con actividad
 
@@ -225,7 +253,9 @@ Racha
 
 El **cumplimiento** cuenta por linaje, no por día: una tarea que sobrevive
 tres días es un compromiso, no tres, así que tener pendientes no te
-castiga dos veces. En la TUI, la tecla `s` muestra los números.
+castiga dos veces. Cada día muestra también lo estimado para ese día: la
+suma de la estimación de sus entradas, incluidas las que llegaron
+arrastradas. En la TUI, la tecla `s` muestra los números.
 
 ### Búsqueda
 
@@ -284,6 +314,9 @@ la búsqueda sigue funcionando con un escaneo simple, solo que más lento.
   El arrastre automático solo ocurre al abrir **hoy**: mirar un día futuro
   no copia nada. Para adelantar lo pendiente a otro día está
   `protas roll --to`.
+- **Prioridad y estimación**: cada entrada puede guardar una prioridad
+  (`alta`, `media`, `baja`) y una estimación en minutos. Las dos son
+  opcionales y el arrastre las copia con el texto.
 - **Procedencia**: una entrada arrastrada lo dice: `(de ayer)` o
   `(de 2026-11-08)`. Al abrir el día, lo que quedó sin marcar ayer ya está
   en la agenda de hoy: no hay que importar nada.
