@@ -36,7 +36,7 @@ because the user did not ask for it.
 - [x] T2 (S1, S3, S4): commit `da02213`. `Task` fields, parse and format helpers, `add_task`
   options, a `set` method, ordering by priority and estimate; CLI `add
   --priority/--estimate`, `protas set`, list/show/JSON output. Route: inline.
-- [x] T3 (S1, S5): commit `PENDING-T3`. TUI shows priority and estimate, `!` cycles the priority and
+- [x] T3 (S1, S5): commit `f6f467f`. TUI shows priority and estimate, `!` cycles the priority and
   `E` edits the estimate; help updated. Route: inline.
 - [ ] T4 (S1): `stats` sums the estimate of each day in text, JSON and the TUI.
   Route: inline.
@@ -78,7 +78,7 @@ because the user did not ask for it.
   only. Tests were written after the implementation, so no RED was observed
   for this task; the differential check against the base commit was run
   instead.
-- L7 (2026-11-12): T3 done in `PENDING-T3`; 330 tests green. The list line in the
+- L7 (2026-11-12): T3 done in `f6f467f`; 330 tests green. The list line in the
   TUI carries the details, `!` cycles none, alta, media, baja, none and `E`
   opens the estimate editor prefilled with the current value. The help keeps
   one line for the three editing keys, so the screen still fits 20 lines.
