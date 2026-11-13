@@ -142,6 +142,31 @@ class StatsTest(unittest.TestCase):
 
         self.assertEqual(stats.streak, 2)
 
+    def test_the_estimates_of_each_day_are_summed(self):
+        first = self.store.ensure_day(day_offset(-1))
+        second = self.store.ensure_day(day_offset(0))
+        self.store.add_task("Una hora", first.id, estimate=60)
+        self.store.add_task("Media hora", second.id, estimate=30)
+        self.store.add_task("Sin estimar", second.id)
+
+        stats = self.store.stats(days=3)
+
+        by_date = {stat.date: stat for stat in stats.window}
+        self.assertEqual(by_date[day_offset(-1)].estimate, 60)
+        self.assertEqual(by_date[day_offset(0)].estimate, 30)
+
+    def test_a_carried_task_is_estimated_again_on_the_day_it_lands(self):
+        task = self.store.add_task(
+            "Pendiente", self.store.ensure_day(day_offset(-1)).id, estimate=45
+        )
+        self.store.rollover(day_offset(0))
+
+        stats = self.store.stats(days=3)
+
+        by_date = {stat.date: stat for stat in stats.window}
+        self.assertEqual(by_date[day_offset(-1)].estimate, 45)
+        self.assertEqual(by_date[day_offset(0)].estimate, 45)
+
     def test_the_tui_can_draw_the_numbers(self):
         from protas.tui import _stats_lines
 
@@ -153,6 +178,16 @@ class StatsTest(unittest.TestCase):
 
         self.assertTrue(any("Ritmo" in line for line in lines))
         self.assertTrue(any("Racha" in line for line in lines))
+
+    def test_the_tui_can_draw_the_estimate_of_the_day(self):
+        from protas.tui import _stats_lines
+
+        day = self.store.ensure_day(day_offset(0))
+        self.store.add_task("Algo", day.id, estimate=90)
+
+        lines = _stats_lines(self.store)
+
+        self.assertTrue(any("1h 30m" in line for line in lines))
 
 
 class StatsCliTest(unittest.TestCase):
@@ -195,6 +230,28 @@ class StatsCliTest(unittest.TestCase):
         self.assertEqual(len(payload["days"]), 14)
         self.assertIn("streak", payload)
 
+    def test_stats_sums_the_estimate_of_each_day(self):
+        self.run_cli("add", "Corta", "--date", day_offset(0), "--estimate", "30m")
+        self.run_cli("add", "Larga", "--date", day_offset(0), "--estimate", "2h")
+
+        code, out = self.run_cli("stats")
+
+        self.assertEqual(code, 0)
+        self.assertIn("2h 30m estimadas", out)
+        self.assertIn("2h 30m", out.split("Ritmo", 1)[1])
+
+    def test_the_json_carries_the_estimate_of_each_day(self):
+        import json
+
+        self.run_cli("add", "Larga", "--date", day_offset(0), "--estimate", "2h")
+
+        code, out = self.run_cli("stats", "--json")
+
+        self.assertEqual(code, 0)
+        day = json.loads(out)["days"][-1]
+        self.assertEqual(day["date"], day_offset(0))
+        self.assertEqual(day["estimate_minutes"], 120)
+
 class ComputeStatsTest(unittest.TestCase):
     """The counting works on plain rows, with no database and a fixed today."""
 
@@ -222,6 +279,17 @@ class ComputeStatsTest(unittest.TestCase):
         self.assertEqual(stats.completed_per_day, 1)
         self.assertEqual(stats.active_days, 2)
         self.assertEqual(stats.projects, [])
+
+    def test_rows_without_the_estimate_column_count_as_zero(self):
+        from protas.stats import compute_stats
+
+        rows = [
+            {"id": 1, "origin_id": None, "done": 0, "project_id": None, "date": "2026-03-02"},
+        ]
+
+        stats = compute_stats(rows, [], [], 1, date(2026, 3, 2))
+
+        self.assertEqual(stats.window[0].estimate, 0)
 
 
 if __name__ == "__main__":

@@ -200,6 +200,7 @@ class DayStat:
     tasks: int
     done: int
     projects: int
+    estimate: int = 0
 
     @property
     def adherence(self) -> float:

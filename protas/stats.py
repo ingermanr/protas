@@ -39,6 +39,17 @@ def compute_stats(
 
     by_id = {row["id"]: row for row in rows}
 
+    def estimate_of(row: Mapping) -> int:
+        """The minutes an entry was estimated to take, or zero.
+
+        Rows built by an older database have no such column, and the tests
+        feed plain dicts.
+        """
+        try:
+            return row["estimate"] or 0
+        except (KeyError, IndexError):
+            return 0
+
     def root_of(task_id: int) -> int:
         current = by_id[task_id]
         seen = {task_id}
@@ -51,7 +62,10 @@ def compute_stats(
     per_day: dict[str, dict[str, int]] = {}
 
     for row in rows:
-        day = per_day.setdefault(row["date"], {"tasks": 0, "done": 0, "projects": 0})
+        day = per_day.setdefault(
+            row["date"], {"tasks": 0, "done": 0, "projects": 0, "estimate": 0}
+        )
+        day["estimate"] += estimate_of(row)
         if row["project_id"] is not None:
             day["projects"] += 1
             continue
@@ -82,6 +96,7 @@ def compute_stats(
             tasks=per_day.get(date, {}).get("tasks", 0),
             done=per_day.get(date, {}).get("done", 0),
             projects=per_day.get(date, {}).get("projects", 0),
+            estimate=per_day.get(date, {}).get("estimate", 0),
         )
         for date in window_dates
     ]

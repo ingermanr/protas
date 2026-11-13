@@ -1021,8 +1021,10 @@ class Store:
     # ------------------------------------------------------------------
     def stats(self, days: int = 14) -> Stats:
         """Numbers for the last ``days`` days. The counting lives in ``stats``."""
+        estimate = "t.estimate" if self.has_details() else "NULL"
         rows = self.conn.execute(
-            """SELECT t.id, t.origin_id, t.done, t.project_id, w.date AS date
+            f"""SELECT t.id, t.origin_id, t.done, t.project_id, {estimate} AS estimate,
+                   w.date AS date
                FROM tasks t JOIN workspaces w ON w.id = t.workspace_id
                WHERE w.kind = 'day'"""
         ).fetchall()

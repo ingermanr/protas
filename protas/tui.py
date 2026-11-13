@@ -363,7 +363,8 @@ def _stats_lines(store: Store, days: int = 14) -> list[str]:
     lines = [" Ritmo"]
     for stat in stats.window:
         bar = "#" * round(stat.done * 20 / peak) if peak and stat.done else ""
-        lines.append(f"  {stat.date[5:]}  {bar:<20} {stat.done}")
+        estimate = f"  {format_estimate(stat.estimate)}" if stat.estimate else ""
+        lines.append(f"  {stat.date[5:]}  {bar:<20} {stat.done}{estimate}")
 
     lines.append("")
     lines.append(f" {stats.completed_per_day} completadas en {days} dias")

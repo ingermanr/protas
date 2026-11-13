@@ -16,7 +16,7 @@ from . import rules, text
 from . import __version__, db
 from .db import MigrationError
 from .store import Store, Task, Workspace, check_date, describe_event, today
-from .models import parse_estimate, parse_priority
+from .models import format_estimate, parse_estimate, parse_priority
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -586,6 +586,7 @@ def cmd_stats(store: Store, args) -> int:
                             "tasks": stat.tasks,
                             "done": stat.done,
                             "projects": stat.projects,
+                            "estimate_minutes": stat.estimate,
                         }
                         for stat in stats.window
                     ],
@@ -612,18 +613,25 @@ def cmd_stats(store: Store, args) -> int:
         )
         return 0
 
+    today_stat = next((stat for stat in stats.window if stat.date == today()), None)
+    today_estimate = today_stat.estimate if today_stat else 0
+
     print("Hoy")
-    print(
+    line = (
         f"  {today_counts['open']} pendientes | {today_counts['done']} hechas"
         f" | {today_counts['projects']} proyectos"
     )
+    if today_estimate:
+        line += f" | {format_estimate(today_estimate)} estimadas"
+    print(line)
 
     print()
     print(f"Ritmo (ultimos {args.days} dias)")
     peak = max((stat.done for stat in stats.window), default=0)
     for stat in stats.window:
         bar = "#" * round(stat.done * 24 / peak) if peak and stat.done else ""
-        print(f"  {stat.date}  {bar:<24} {stat.done}")
+        estimate = f"  {format_estimate(stat.estimate)}" if stat.estimate else ""
+        print(f"  {stat.date}  {bar:<24} {stat.done}{estimate}")
     average = stats.completed_per_day / stats.active_days if stats.active_days else 0
     print(
         f"  {stats.completed_per_day} completadas | {average:.1f} por dia activo"
