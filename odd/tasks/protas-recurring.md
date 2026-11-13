@@ -79,4 +79,17 @@ task that was deleted does not come back the same day.
   opens can duplicate a carried task, and `ensure_day` can raise
   IntegrityError in the losing process (data intact). Also open: reopening
   a past recurring task after its successor was born leaves two pending.
+- L7 (2026-11-12): branch `fix/concurrent-open` (2feecff, e1b4977) closes
+  the first two advisories: `ensure_day` inserts with `INSERT OR IGNORE`
+  and re-reads, and `open_day` claims the `carries (origin_id,
+  workspace_id)` row before copying, skipping a duplicate claim. Verified
+  independently before merge: 8 processes x 20 rounds show/roll carry
+  each entry once, no nonzero exit, `integrity_check` ok; baseline
+  reproduces duplicates (4/20 rounds silently, exit 0) and the
+  IntegrityError. Regression tests: `tests/test_concurrent_open.py` and
+  `tests/test_concurrent_carry.py` (RED at e56898b, GREEN at 2feecff).
+  Native review approved and acknowledged (risk, resilience, reliability
+  lenses) with eight informational advisories, none blocking. 296 tests
+  green. Still open: reopening a past recurring task after its successor
+  was born leaves two pending.
 
