@@ -38,7 +38,7 @@ because the user did not ask for it.
   --priority/--estimate`, `protas set`, list/show/JSON output. Route: inline.
 - [x] T3 (S1, S5): commit `f6f467f`. TUI shows priority and estimate, `!` cycles the priority and
   `E` edits the estimate; help updated. Route: inline.
-- [x] T4 (S1): commit `PENDING-T4`. `stats` sums the estimate of each day in text, JSON and the TUI.
+- [x] T4 (S1): commit `51570f3`. `stats` sums the estimate of each day in text, JSON and the TUI.
   Route: inline.
 - [ ] T5 (S5): README documents the new options, command and keys. Route:
   inline.
@@ -82,7 +82,7 @@ because the user did not ask for it.
   TUI carries the details, `!` cycles none, alta, media, baja, none and `E`
   opens the estimate editor prefilled with the current value. The help keeps
   one line for the three editing keys, so the screen still fits 20 lines.
-- L8 (2026-11-12): T4 done in `PENDING-T4`; 336 tests green. `DayStat.estimate`
+- L8 (2026-11-12): T4 done in `51570f3`; 336 tests green. `DayStat.estimate`
   holds the minutes estimated for that day: every entry of the day adds its
   own estimate, mentions included, and a carried task is estimated again on
   the day it lands because that day is planned with it. `stats` prints the
