@@ -10,10 +10,11 @@ import qs.Ui
 // completing one completes the whole project.
 Panel {
   id: root
-  moduleName: "german-ds.protas"
-  ipcTarget: "german-ds.protas"
+  moduleName: "io.github.ingermanr.protas"
+  ipcTarget: "io.github.ingermanr.protas"
 
-  readonly property string cli: Quickshell.env("HOME") + "/.local/bin/protas"
+  // protas omarchy install writes the full path of the command here.
+  readonly property string cli: "protas"
 
   readonly property string glyphList: String.fromCodePoint(0xF065F) // nf-md-format_list_checks
   readonly property string glyphOpen: String.fromCodePoint(0xF003A) // nf-md-checkbox_blank_outline

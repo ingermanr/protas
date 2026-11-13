@@ -57,10 +57,14 @@ class OmarchyInstallTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def provide_omarchy(self):
+    def provide_omarchy(self, protas=True):
         script = self.bin / "omarchy"
         script.write_text(FAKE_OMARCHY)
         script.chmod(script.stat().st_mode | stat.S_IXUSR)
+        if protas:
+            command = self.bin / "protas"
+            command.write_text("#!/bin/sh\nexit 0\n")
+            command.chmod(command.stat().st_mode | stat.S_IXUSR)
 
     def calls(self):
         return self.log.read_text().splitlines() if self.log.exists() else []
@@ -94,6 +98,66 @@ class OmarchyInstallTest(unittest.TestCase):
         )
         self.assertIn(str(self.target), out)
         self.assertFalse(self.db.exists())
+
+    def test_the_panel_has_a_public_id_and_no_personal_path(self):
+        self.assertEqual(omarchy.PLUGIN_ID, "io.github.ingermanr.protas")
+        self.provide_omarchy()
+
+        code, _, _ = self.run_cli("install")
+
+        self.assertEqual(code, 0)
+        panel = (self.target / "Panel.qml").read_text()
+        self.assertIn(f'readonly property string cli: "{self.bin / "protas"}"', panel)
+        self.assertNotIn(".local/bin", panel)
+        self.assertNotIn("german-ds", panel)
+        manifest = json.loads((self.target / "manifest.json").read_text())
+        self.assertNotIn("german-ds", json.dumps(manifest))
+
+    def test_without_the_protas_command_nothing_is_installed(self):
+        self.provide_omarchy(protas=False)
+
+        code, out, err = self.run_cli("install")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("no encuentro el comando protas", err)
+        self.assertNotIn("Traceback", err)
+        self.assertFalse(self.target.exists())
+        self.assertEqual(self.calls(), [])
+
+    def test_the_old_panel_is_removed_after_the_new_one_is_enabled(self):
+        self.provide_omarchy()
+        old = self.target.parent / "german-ds.protas"
+        old.mkdir(parents=True)
+        other = self.target.parent / "german-ds.spotify"
+        other.mkdir()
+
+        code, out, _ = self.run_cli("install")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            self.calls()[1:],
+            [
+                "shell shell rescanPlugins",
+                f"plugin enable {omarchy.PLUGIN_ID}",
+                "plugin remove german-ds.protas --yes",
+                "restart shell",
+            ],
+        )
+        self.assertIn("german-ds.protas", out)
+        self.assertTrue(other.exists())
+
+    def test_an_old_panel_that_cannot_be_removed_is_reported(self):
+        self.provide_omarchy()
+        (self.target.parent / "german-ds.protas").mkdir(parents=True)
+        self.env["FAKE_OMARCHY_FAIL"] = "plugin remove"
+
+        code, out, _ = self.run_cli("install")
+
+        self.assertEqual(code, 0)
+        self.assertTrue((self.target / "Panel.qml").is_file())
+        self.assertIn("omarchy plugin remove german-ds.protas", out)
+        self.assertIn("restart shell", self.calls())
 
     def test_install_replaces_an_older_copy(self):
         self.provide_omarchy()
@@ -247,6 +311,7 @@ class OmarchyInstallTest(unittest.TestCase):
         self.assertEqual((saved / "Panel.qml").read_text(), "old panel")
 
     def test_an_omarchy_that_cannot_be_run_is_named_as_the_cause(self):
+        self.provide_omarchy()
         script = self.bin / "omarchy"
         script.write_text("#!/nonexistent/interpreter\n")
         script.chmod(script.stat().st_mode | stat.S_IXUSR)

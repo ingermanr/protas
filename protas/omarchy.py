@@ -8,16 +8,26 @@ it, and restart the bar, so the bar never keeps an older panel in memory.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from importlib import resources
 from pathlib import Path
 from typing import Callable, Optional
 
-PLUGIN_ID = "german-ds.protas"
+PLUGIN_ID = "io.github.ingermanr.protas"
+
+# The id the panel had before it took a public one. An install removes that
+# copy so the bar does not show two panels.
+OLD_PLUGIN_IDS = ("german-ds.protas",)
+
+# The line of Panel.qml that names the command; the install writes the full
+# path in, because the bar does not run with the user's shell PATH.
+CLI_LINE = 'readonly property string cli: "protas"'
 
 # Replacing the folder makes the bar reload the plugin, and while it does
 # it answers nothing. Calls to the bar are repeated until it is back.
@@ -52,9 +62,16 @@ def install(
             "no encuentro el comando omarchy: el panel solo se instala en Omarchy"
         )
 
+    command = protas_command()
+    if command is None:
+        raise OmarchyError(
+            "no encuentro el comando protas: el panel lo necesita instalado,"
+            " con uv tool install . o pipx install . (ver el README)"
+        )
+
     target = plugins_dir() / PLUGIN_ID
     try:
-        _replace_plugin(omarchy, target)
+        _replace_plugin(omarchy, target, command)
     except OSError as error:
         raise OmarchyError(f"no pude instalar el panel en {target}: {error}") from error
 
@@ -63,6 +80,19 @@ def install(
     _ask_bar(omarchy, notify, "plugin", "enable", PLUGIN_ID)
 
     report = [f"Panel instalado en {target}"]
+    for old_id in OLD_PLUGIN_IDS:
+        if not os.path.lexists(target.parent / old_id):
+            continue
+        # The new panel is already enabled, so a removal that fails only
+        # leaves an extra panel behind; the install still counts.
+        try:
+            _ask_bar(omarchy, notify, "plugin", "remove", old_id, "--yes")
+            report.append(f"Panel anterior {old_id} quitado.")
+        except OmarchyError as error:
+            report.append(
+                f"No pude quitar el panel anterior ({error});"
+                f" quítalo con: omarchy plugin remove {old_id}"
+            )
     if restart:
         _run(omarchy, "restart", "shell")
         report.append("Barra reiniciada: el panel ya está activo.")
@@ -71,7 +101,20 @@ def install(
     return report
 
 
-def _replace_plugin(omarchy: str, target: Path) -> None:
+def protas_command() -> Optional[str]:
+    """The full path of the protas command the panel should run.
+
+    The command that is running wins when it is the protas script itself;
+    otherwise the one on the PATH. ``python -m protas`` is not a command
+    the bar can run, so it does not count.
+    """
+    running = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
+    if running is not None and running.name == "protas" and os.access(running, os.X_OK):
+        return str(running.absolute())
+    return shutil.which("protas")
+
+
+def _replace_plugin(omarchy: str, target: Path, command: str) -> None:
     """Put the panel this protas ships where Omarchy reads it.
 
     The new copy is written and validated in a folder of its own, and only
@@ -91,6 +134,16 @@ def _replace_plugin(omarchy: str, target: Path) -> None:
         for item in source.iterdir():
             if item.is_file():
                 (fresh / item.name).write_bytes(item.read_bytes())
+
+        panel = fresh / "Panel.qml"
+        text = panel.read_text(encoding="utf-8")
+        if CLI_LINE not in text:
+            raise OmarchyError("el panel de esta instalación no dice dónde está protas")
+        # json.dumps quotes and escapes the path the way a QML string needs.
+        panel.write_text(
+            text.replace(CLI_LINE, f"readonly property string cli: {json.dumps(command)}"),
+            encoding="utf-8",
+        )
 
         _run(omarchy, "plugin", "validate", str(fresh))
 

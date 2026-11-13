@@ -35,8 +35,9 @@ user authorizes push, merge, release and the OPR PR. Test runner:
 
 - [x] T1 (S1, S2, S4): README install, download and platforms; the TUI says
   it needs curses instead of a traceback. Route: inline. Commit: see L4.
-- [ ] T2 (S5): portable panel and new plugin id with cleanup of the old one.
+- [x] T2 (S5): portable panel and new plugin id with cleanup of the old one.
   Route: inline. Risk: item 3 (renames the plugin id an installed panel uses).
+  Commit: see L5.
 - [ ] T3 (S3, S6): Arch package, desktop entry and icon, local build and
   install; release and OPR steps documented. Route: inline. Risk: item 5
   (packaging and delivery).
@@ -70,3 +71,14 @@ user authorizes push, merge, release and the OPR PR. Test runner:
   with "la TUI necesita curses…" (RED observed: ModuleNotFoundError
   traceback). Found: `ingermanr/protas` is private, so nobody else can clone
   it or build an OPR package from it until the user makes it public.
+- L5 (2026-11-13): T2. Plugin folder and id are now
+  `io.github.ingermanr.protas` (manifest author `ingermanr`, version 1.2.0).
+  `Panel.qml` ships `readonly property string cli: "protas"` and
+  `protas omarchy install` writes the full path of the command it finds
+  (the running `protas` script, else `shutil.which`) with `json.dumps`;
+  without a `protas` command it exits 1 and installs nothing. After enabling
+  the new panel it runs `omarchy plugin remove german-ds.protas --yes` only
+  when that folder exists; a failed removal is reported with the command to
+  run and the install still succeeds. RED observed for the four new tests;
+  355 tests green; the real `omarchy plugin validate` accepts the panel.
+  README panel section updated.

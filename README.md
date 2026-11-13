@@ -481,17 +481,28 @@ protas funciona igual sin el panel. Si usas Omarchy y lo quieres:
 protas omarchy install
 ```
 
-El comando copia el panel a `~/.config/omarchy/plugins/german-ds.protas`,
-le pide a Omarchy que lo valide y lo active, y reinicia la barra. Sirve
-también para actualizarlo: reemplaza la copia anterior, y el reinicio es
-necesario porque la barra no suelta el panel que ya tenía en memoria. Con
+El panel necesita `protas` instalado como comando (sección
+[Instalación](#instalación)); `python3 -m protas` no basta, porque la barra
+no corre dentro de la carpeta del repositorio.
+
+El comando copia el panel a
+`~/.config/omarchy/plugins/io.github.ingermanr.protas`, le escribe la ruta
+completa del comando `protas` que encontró (la barra no usa el `PATH` de tu
+terminal), le pide a Omarchy que lo valide y lo active, y reinicia la barra.
+Sirve también para actualizarlo: reemplaza la copia anterior, y el reinicio
+es necesario porque la barra no suelta el panel que ya tenía en memoria. Con
 `--no-restart` deja la barra como está y te dice cómo reiniciarla después.
+Si reinstalas `protas` en otro lugar, vuelve a correr
+`protas omarchy install`.
 
-Para quitarlo: `omarchy plugin remove german-ds.protas`.
+Si tenías el panel con su nombre anterior, `german-ds.protas`, el comando lo
+quita para que no queden dos.
 
-El panel espera el comando en `~/.local/bin/protas`. El intervalo de
-refresco (60 s por defecto) se ajusta en la configuración del widget. Su
-código está en `protas/integrations/omarchy/german-ds.protas/`.
+Para quitarlo: `omarchy plugin remove io.github.ingermanr.protas`.
+
+El intervalo de refresco (60 s por defecto) se ajusta en la configuración
+del widget. Su código está en
+`protas/integrations/omarchy/io.github.ingermanr.protas/`.
 
 ## Roadmap
 
