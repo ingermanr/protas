@@ -254,6 +254,31 @@ def _notice(message: str) -> None:
     print(f"protas: {message}", file=sys.stderr)
 
 
+def _interactive() -> bool:
+    """True when a person runs protas in a terminal.
+
+    The Omarchy panel runs protas in the background to read the agenda;
+    those calls must never replace the panel or restart the bar.
+    """
+    return sys.stdout.isatty() and sys.stderr.isatty()
+
+
+def _refresh_panel() -> None:
+    """Replace an installed Omarchy panel that no longer matches protas."""
+    from . import omarchy
+
+    try:
+        report = omarchy.refresh_installed(notify=_notice)
+    except (omarchy.OmarchyError, OSError) as error:
+        _notice(
+            f"no pude actualizar el panel de Omarchy ({error});"
+            " corre protas omarchy install"
+        )
+        return
+    if report is not None:
+        _notice("panel de Omarchy actualizado a esta versión de protas")
+
+
 def cmd_omarchy(args) -> int:
     from . import omarchy
 
@@ -812,6 +837,11 @@ def main(argv: list[str] | None = None) -> int:
     # The panel is installed around protas, not in it: no database needed.
     if args.command == "omarchy":
         return cmd_omarchy(args)
+
+    # After an update the panel in the bar still has the old files; any
+    # command a person runs puts the new ones in place.
+    if _interactive():
+        _refresh_panel()
 
     try:
         store = Store(path=args.db, notify=_notice)

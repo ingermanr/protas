@@ -101,6 +101,38 @@ def install(
     return report
 
 
+def refresh_installed(
+    notify: Optional[Callable[[str], None]] = None,
+) -> Optional[list[str]]:
+    """Bring an installed panel in line with this protas.
+
+    Returns the install report when the panel was replaced, and None when
+    there was nothing to do: no Omarchy, no panel installed (the user never
+    asked for it), no protas command, or a panel that already matches. A
+    panel matches when its files are exactly the ones an install would
+    write now, the path of the command included, so a new protas version
+    and a protas that moved both count as outdated.
+    """
+    if os.environ.get("PROTAS_NO_PANEL_UPDATE"):
+        return None
+    if shutil.which("omarchy") is None:
+        return None
+    target = plugins_dir() / PLUGIN_ID
+    if not target.is_dir():
+        return None
+    command = protas_command()
+    if command is None:
+        return None
+    try:
+        expected = _panel_files(command)
+        installed = {item.name: item.read_bytes() for item in target.iterdir() if item.is_file()}
+    except OSError:
+        return None
+    if installed == expected:
+        return None
+    return install(restart=True, notify=notify)
+
+
 def protas_command() -> Optional[str]:
     """The full path of the protas command the panel should run.
 
@@ -121,9 +153,7 @@ def _replace_plugin(omarchy: str, target: Path, command: str) -> None:
     then takes the place of the installed one, so a copy that cannot be
     written or does not validate leaves the previous panel untouched.
     """
-    source = resources.files("protas") / "integrations" / "omarchy" / PLUGIN_ID
-    if not source.is_dir():
-        raise OmarchyError("esta instalación de protas no trae el panel de Omarchy")
+    files = _panel_files(command)
 
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = _staging_dir(target)
@@ -131,19 +161,8 @@ def _replace_plugin(omarchy: str, target: Path, command: str) -> None:
     try:
         fresh = staging / PLUGIN_ID
         fresh.mkdir()
-        for item in source.iterdir():
-            if item.is_file():
-                (fresh / item.name).write_bytes(item.read_bytes())
-
-        panel = fresh / "Panel.qml"
-        text = panel.read_text(encoding="utf-8")
-        if CLI_LINE not in text:
-            raise OmarchyError("el panel de esta instalación no dice dónde está protas")
-        # json.dumps quotes and escapes the path the way a QML string needs.
-        panel.write_text(
-            text.replace(CLI_LINE, f"readonly property string cli: {json.dumps(command)}"),
-            encoding="utf-8",
-        )
+        for name, data in files.items():
+            (fresh / name).write_bytes(data)
 
         _run(omarchy, "plugin", "validate", str(fresh))
 
@@ -171,6 +190,27 @@ def _replace_plugin(omarchy: str, target: Path, command: str) -> None:
     finally:
         if not keep_staging:
             shutil.rmtree(staging, ignore_errors=True)
+
+
+def _panel_files(command: str) -> dict[str, bytes]:
+    """The files of the panel as an install writes them, by name.
+
+    They are the ones this protas ships, with the full path of the command
+    written into Panel.qml.
+    """
+    source = resources.files("protas") / "integrations" / "omarchy" / PLUGIN_ID
+    if not source.is_dir():
+        raise OmarchyError("esta instalación de protas no trae el panel de Omarchy")
+    files = {item.name: item.read_bytes() for item in source.iterdir() if item.is_file()}
+
+    text = files.get("Panel.qml", b"").decode("utf-8")
+    if CLI_LINE not in text:
+        raise OmarchyError("el panel de esta instalación no dice dónde está protas")
+    # json.dumps quotes and escapes the path the way a QML string needs.
+    files["Panel.qml"] = text.replace(
+        CLI_LINE, f"readonly property string cli: {json.dumps(command)}"
+    ).encode("utf-8")
+    return files
 
 
 def _staging_dir(target: Path) -> Path:

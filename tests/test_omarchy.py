@@ -32,7 +32,9 @@ exit 0
 """
 
 
-class OmarchyInstallTest(unittest.TestCase):
+class OmarchyCase(unittest.TestCase):
+    """A fake omarchy and protas on a private PATH and config folder."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
@@ -77,6 +79,7 @@ class OmarchyInstallTest(unittest.TestCase):
             code = cli.main(["--db", str(self.db), "omarchy", *args])
         return code, out.getvalue(), err.getvalue()
 
+class OmarchyInstallTest(OmarchyCase):
     def test_install_copies_the_panel_then_enables_it_and_restarts_the_bar(self):
         self.provide_omarchy()
 
@@ -338,3 +341,113 @@ class OmarchyInstallTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PanelRefreshTest(OmarchyCase):
+    """An installed panel that no longer matches this protas is replaced."""
+
+    def install_panel(self):
+        self.provide_omarchy()
+        code, _, _ = self.run_cli("install")
+        self.assertEqual(code, 0)
+        self.log.unlink()
+
+    def refresh(self):
+        with mock.patch.dict(os.environ, self.env):
+            return omarchy.refresh_installed()
+
+    def run_command(self, *args, interactive=True, env=None):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {**self.env, **(env or {})}), mock.patch.object(
+            cli, "_interactive", return_value=interactive
+        ), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(["--db", str(self.db), *args])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_panel_that_matches_is_left_alone(self):
+        self.install_panel()
+
+        self.assertIsNone(self.refresh())
+        self.assertEqual(self.calls(), [])
+
+    def test_an_older_panel_is_replaced_and_the_bar_restarted(self):
+        self.install_panel()
+        (self.target / "Panel.qml").write_text("old panel")
+
+        report = self.refresh()
+
+        self.assertIsNotNone(report)
+        panel = (self.target / "Panel.qml").read_text()
+        self.assertIn(f'readonly property string cli: "{self.bin / "protas"}"', panel)
+        self.assertEqual(
+            self.calls()[1:],
+            ["shell shell rescanPlugins", f"plugin enable {omarchy.PLUGIN_ID}", "restart shell"],
+        )
+
+    def test_a_panel_that_points_at_another_protas_is_fixed(self):
+        self.install_panel()
+        panel = self.target / "Panel.qml"
+        panel.write_text(panel.read_text().replace(str(self.bin / "protas"), "/gone/protas"))
+
+        self.assertIsNotNone(self.refresh())
+        self.assertNotIn("/gone/protas", panel.read_text())
+
+    def test_without_an_installed_panel_nothing_happens(self):
+        self.provide_omarchy()
+
+        self.assertIsNone(self.refresh())
+        self.assertFalse(self.target.parent.exists())
+        self.assertEqual(self.calls(), [])
+
+    def test_without_omarchy_nothing_happens(self):
+        self.install_panel()
+        (self.bin / "omarchy").unlink()
+        (self.target / "Panel.qml").write_text("old panel")
+
+        self.assertIsNone(self.refresh())
+        self.assertEqual((self.target / "Panel.qml").read_text(), "old panel")
+
+    def test_a_command_in_a_terminal_refreshes_the_panel_and_says_so(self):
+        self.install_panel()
+        (self.target / "Panel.qml").write_text("old panel")
+
+        code, out, err = self.run_command("add", "Comprar pan", "--date", "2026-11-11")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "1")
+        self.assertIn("panel de Omarchy actualizado", err)
+        self.assertNotEqual((self.target / "Panel.qml").read_text(), "old panel")
+
+    def test_a_command_without_a_terminal_leaves_the_panel(self):
+        self.install_panel()
+        (self.target / "Panel.qml").write_text("old panel")
+
+        code, _, err = self.run_command("list", "--all", "--json", interactive=False)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+        self.assertEqual((self.target / "Panel.qml").read_text(), "old panel")
+        self.assertEqual(self.calls(), [])
+
+    def test_the_refresh_can_be_turned_off(self):
+        self.install_panel()
+        (self.target / "Panel.qml").write_text("old panel")
+
+        code, _, _ = self.run_command("list", env={"PROTAS_NO_PANEL_UPDATE": "1"})
+
+        self.assertEqual(code, 0)
+        self.assertEqual((self.target / "Panel.qml").read_text(), "old panel")
+
+    def test_a_refresh_that_fails_does_not_stop_the_command(self):
+        self.install_panel()
+        (self.target / "Panel.qml").write_text("old panel")
+        self.env["FAKE_OMARCHY_FAIL"] = "plugin validate"
+
+        code, out, err = self.run_command("add", "Comprar pan", "--date", "2026-11-11")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "1")
+        self.assertIn("no pude actualizar el panel de Omarchy", err)
+        self.assertIn("protas omarchy install", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual((self.target / "Panel.qml").read_text(), "old panel")

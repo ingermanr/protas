@@ -110,18 +110,42 @@ receta y cómo compilarla están en [packaging/README.md](packaging/README.md).
 Cuando esté publicado en el repositorio de paquetes de Omarchy bastará con
 `omarchy pkg add protas`; todavía no lo está.
 
-### Actualizar y desinstalar
+### Actualizar
+
+Cómo llega una versión nueva depende de cómo instalaste protas:
+
+| Instalado con | Para actualizar |
+|---|---|
+| `omarchy pkg add protas` (cuando esté publicado) | nada aparte: llega con `omarchy update`, junto con el resto del sistema |
+| `makepkg -si` desde `packaging/` | `git pull` y de nuevo `makepkg -si` en `packaging/` |
+| `uv` | `git pull` (o descarga el ZIP de nuevo) y `uv tool install --reinstall .` |
+| `pipx` | `git pull` (o descarga el ZIP de nuevo) y `pipx install --force .` |
+
+`protas version` dice qué versión tienes. Las versiones nuevas se anuncian
+en los [releases](https://github.com/ingermanr/protas/releases) del
+repositorio.
+
+Al actualizar no tienes que hacer nada más:
+
+- **Tus datos:** si la versión nueva cambia la base, se actualiza sola la
+  primera vez que la abres, con una copia previa (ver
+  [Actualizaciones](#actualizaciones)).
+- **El panel de Omarchy:** si lo instalaste, el primer comando de protas que
+  corras en una terminal después de actualizar lo pone al día y reinicia la
+  barra una vez. Lo mismo pasa si reinstalas protas en otro lugar. Para
+  hacerlo a mano: `protas omarchy install`.
+
+### Desinstalar
 
 ```bash
-git pull                             # o descarga el ZIP de nuevo
-uv tool install --reinstall .        # con uv
-pipx install --force .               # con pipx
-
-uv tool uninstall protas             # desinstalar con uv
-pipx uninstall protas                # desinstalar con pipx
+uv tool uninstall protas             # con uv
+pipx uninstall protas                # con pipx
+sudo pacman -R protas                # el paquete de Arch u Omarchy
 ```
 
-Desinstalar no borra tus datos.
+Si tenías el panel, quítalo también:
+`omarchy plugin remove io.github.ingermanr.protas`. Desinstalar no borra tus
+datos.
 
 ### Dónde quedan tus datos
 
@@ -509,8 +533,12 @@ terminal), le pide a Omarchy que lo valide y lo active, y reinicia la barra.
 Sirve también para actualizarlo: reemplaza la copia anterior, y el reinicio
 es necesario porque la barra no suelta el panel que ya tenía en memoria. Con
 `--no-restart` deja la barra como está y te dice cómo reiniciarla después.
-Si reinstalas `protas` en otro lugar, vuelve a correr
-`protas omarchy install`.
+No hace falta repetirlo al actualizar: cuando el panel instalado ya no
+coincide con tu versión de protas (o con el lugar donde está el comando),
+el primer comando de protas que corras en una terminal lo reemplaza y
+reinicia la barra, con un aviso de una línea. Los llamados que hace el
+propio panel nunca lo disparan. Para que no lo haga, define
+`PROTAS_NO_PANEL_UPDATE=1`.
 
 Si tenías el panel con su nombre anterior, `german-ds.protas`, el comando lo
 quita para que no queden dos.
