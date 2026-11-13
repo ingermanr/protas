@@ -5,9 +5,10 @@ import qs.Commons
 import qs.Ui
 
 // protas bar widget + popup panel. Polling uses `protas list --all --json`,
-// a pure query that never creates or rolls a day. Clicking an entry runs
-// `protas done|undone <id>`; project mentions are left to the TUI, because
-// completing one completes the whole project.
+// a pure query that never creates or rolls a day; the chart of the last days
+// reads `protas stats --json --read-only`, pure as well. Clicking an entry
+// runs `protas done|undone <id>`; project mentions are left to the TUI,
+// because completing one completes the whole project.
 Panel {
   id: root
   moduleName: "io.github.ingermanr.protas"
@@ -41,6 +42,13 @@ Panel {
   readonly property string dayTitle: agenda && agenda.workspace && agenda.workspace.title
     ? String(agenda.workspace.title) : ""
 
+  // ---------- Last days ----------
+  readonly property int chartDays: 5
+  property var stats: null
+  readonly property var chartWindow: stats && stats.days ? stats.days.slice(-chartDays) : []
+  readonly property int streak: stats && stats.streak !== undefined ? stats.streak : 0
+  readonly property var weekdayNames: ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"]
+
   readonly property int refreshIntervalSec: {
     var n = parseInt(String(setting("refreshIntervalSec", 60)), 10)
     if (!isFinite(n)) n = 60
@@ -50,6 +58,7 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.5)
+  readonly property color accent: Color.accent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string summary: {
@@ -88,6 +97,30 @@ Panel {
     loaded = true
   }
 
+  function refreshStats() {
+    if (!statsProc.running) statsProc.running = true
+  }
+
+  function applyStats(raw) {
+    var parsed = null
+    try { parsed = JSON.parse(String(raw || "").trim()) } catch (e) { parsed = null }
+    // A protas too old for --read-only answers nothing on stdout: the chart
+    // simply stays hidden.
+    stats = parsed && typeof parsed === "object" && parsed.days ? parsed : null
+  }
+
+  // Share of the entries of a day that were completed, from 0 to 1.
+  function dayRatio(day) {
+    return day && day.tasks > 0 ? Math.min(1, day.done / day.tasks) : 0
+  }
+
+  function weekday(isoDate) {
+    var parts = String(isoDate).split("-")
+    if (parts.length !== 3) return ""
+    var when = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+    return weekdayNames[when.getDay()]
+  }
+
   function canMark(entry) {
     return entry !== null && entry !== undefined
       && entry.id !== undefined && entry.id !== null
@@ -109,7 +142,7 @@ Panel {
     }
   }
 
-  onOpenedChanged: if (opened) refresh()
+  onOpenedChanged: if (opened) { refresh(); refreshStats() }
   Component.onCompleted: refresh()
 
   implicitWidth: button.implicitWidth
@@ -136,6 +169,16 @@ Panel {
       root.markingId = -1
       if (exitCode !== 0) root.markError = "No pude marcar la entrada."
       root.refresh()
+      root.refreshStats()
+    }
+  }
+
+  Process {
+    id: statsProc
+    command: [root.cli, "stats", "--json", "--days", String(root.chartDays), "--read-only"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyStats(text)
     }
   }
 
@@ -303,6 +346,41 @@ Panel {
             }
           }
 
+          // ---------- Last days ----------
+          Section {
+            visible: root.chartWindow.length > 0
+            title: "ÚLTIMOS " + root.chartDays + " DÍAS"
+
+            Row {
+              id: chart
+              width: parent.width
+              spacing: Style.space(8)
+              readonly property real columnWidth:
+                (width - spacing * (root.chartWindow.length - 1)) / Math.max(1, root.chartWindow.length)
+
+              Repeater {
+                model: root.chartWindow
+                DayBar {
+                  required property var modelData
+                  required property int index
+                  day: modelData
+                  isToday: index === root.chartWindow.length - 1
+                  width: chart.columnWidth
+                }
+              }
+            }
+
+            Text {
+              visible: root.streak > 0
+              width: parent.width
+              textFormat: Text.PlainText
+              text: "Racha: " + root.streak + (root.streak === 1 ? " día" : " días") + " con actividad"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+
           Button {
             width: parent.width
             iconText: root.glyphPlay
@@ -329,6 +407,69 @@ Panel {
       text: parent.title
       foreground: root.foreground
       fontFamily: root.fontFamily
+    }
+  }
+
+  // One day of the chart: the share of its entries that were completed as a
+  // bar, with the percentage above it and the weekday and done/total below.
+  // Today uses the theme accent; a day with no entries keeps an empty track.
+  component DayBar: Column {
+    id: dayBar
+    property var day: null
+    property bool isToday: false
+    readonly property int tasks: day && day.tasks ? day.tasks : 0
+    readonly property int finished: day && day.done ? day.done : 0
+    readonly property real ratio: root.dayRatio(day)
+    spacing: Style.space(4)
+
+    Text {
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      textFormat: Text.PlainText
+      text: dayBar.tasks > 0 ? Math.round(dayBar.ratio * 100) + "%" : "–"
+      color: dayBar.isToday ? root.foreground : root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: dayBar.isToday
+    }
+
+    Rectangle {
+      id: track
+      width: parent.width
+      height: Style.space(56)
+      radius: Style.space(3)
+      color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.08)
+
+      Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: dayBar.tasks > 0 ? Math.max(Style.space(3), track.height * dayBar.ratio) : 0
+        radius: track.radius
+        color: dayBar.isToday ? root.accent : root.foreground
+        opacity: dayBar.isToday ? 1 : 0.55
+      }
+    }
+
+    Text {
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      textFormat: Text.PlainText
+      text: dayBar.isToday ? "hoy" : root.weekday(dayBar.day ? dayBar.day.date : "")
+      color: dayBar.isToday ? root.foreground : root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: dayBar.isToday
+    }
+
+    Text {
+      width: parent.width
+      horizontalAlignment: Text.AlignHCenter
+      textFormat: Text.PlainText
+      text: dayBar.finished + "/" + dayBar.tasks
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
     }
   }
 

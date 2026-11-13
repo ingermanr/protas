@@ -125,6 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
     stats = sub.add_parser("stats", help="numbers of the last days")
     stats.add_argument("--days", type=int, default=14, help="size of the window")
     stats.add_argument("--json", action="store_true", help="machine readable output")
+    stats.add_argument(
+        "--read-only",
+        action="store_true",
+        help="only read: do not open today or carry the pending work into it",
+    )
 
     history = sub.add_parser("history", help="show the story of a project")
     history.add_argument("id", type=int, help="id of the project")
@@ -598,7 +603,17 @@ def cmd_history(store: Store, args) -> int:
 def cmd_stats(store: Store, args) -> int:
     # Opening today first carries the pending work in, so the window and the
     # "Hoy" line count what today holds on the first call of the day too.
-    today_counts = store.counts(store.open_day(today()).id)
+    # --read-only is for the Omarchy panel, which polls in the background
+    # and must never create or carry a day.
+    if args.read_only:
+        day = store.day(today())
+        today_counts = (
+            store.counts(day.id)
+            if day is not None
+            else {"total": 0, "done": 0, "open": 0, "projects": 0}
+        )
+    else:
+        today_counts = store.counts(store.open_day(today()).id)
     stats = store.stats(days=args.days)
 
     if args.json:

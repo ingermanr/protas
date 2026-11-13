@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.ingermanr.protas",
   "name": "protas",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "ingermanr",
   "license": "MIT",
-  "description": "Today's agenda from protas: pending work, the note of the day, and project progress. Click an entry to complete or reopen it.",
+  "description": "Today's agenda from protas: pending work, the note of the day, project progress, and how much of each of the last days was completed. Click an entry to complete or reopen it.",
   "kinds": [
     "bar-widget"
   ],

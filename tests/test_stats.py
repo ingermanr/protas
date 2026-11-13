@@ -251,6 +251,41 @@ class StatsCliTest(unittest.TestCase):
         today_row = [line for line in out.splitlines() if day_offset(0)[5:] in line]
         self.assertTrue(any("2h 30m" in line for line in today_row), out)
 
+    def dump(self):
+        import sqlite3
+
+        conn = sqlite3.connect(self.db)
+        try:
+            return "\n".join(conn.iterdump())
+        finally:
+            conn.close()
+
+    def test_read_only_neither_opens_today_nor_carries_anything(self):
+        import json
+
+        self.run_cli("add", "Pendiente", "--date", day_offset(-1), "--estimate", "1h")
+        before = self.dump()
+
+        code, out = self.run_cli("stats", "--json", "--days", "3", "--read-only")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self.dump(), before)
+        payload = json.loads(out)
+        self.assertEqual(payload["today"], {"total": 0, "done": 0, "open": 0, "projects": 0})
+        days = {day["date"]: day for day in payload["days"]}
+        self.assertEqual(days[day_offset(-1)]["tasks"], 1)
+        self.assertEqual(days[day_offset(0)]["tasks"], 0)
+
+    def test_read_only_counts_what_today_already_holds(self):
+        import json
+
+        self.run_cli("add", "Hoy", "--date", day_offset(0))
+
+        code, out = self.run_cli("stats", "--json", "--read-only")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["today"]["total"], 1)
+
     def test_the_json_carries_the_estimate_of_each_day(self):
         import json
 

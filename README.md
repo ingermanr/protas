@@ -374,6 +374,10 @@ castiga dos veces. Cada día muestra también lo estimado para ese día: la
 suma de la estimación de sus entradas, incluidas las que llegaron
 arrastradas. En la TUI, la tecla `s` muestra los números.
 
+`protas stats --json` da lo mismo para otros programas. Con `--read-only`
+solo lee: no abre el día de hoy ni le trae lo pendiente, así que no cambia
+nada en la base (es lo que usa el panel de Omarchy).
+
 ### Búsqueda
 
 `protas search` busca en tareas, notas y espacios de trabajo al mismo tiempo.
@@ -512,7 +516,12 @@ transacción y no debe hacer `commit` ni usar `executescript`.
 
 protas trae un widget opcional para la barra de Omarchy: muestra cuántas
 entradas quedan pendientes hoy y, al abrirlo, la agenda del día con su
-nota y el avance de los proyectos mencionados. Un clic en una entrada la
+nota, el avance de los proyectos mencionados y una gráfica de los últimos
+5 días. Cada barra es el porcentaje de las entradas de ese día que
+completaste, con el conteo debajo (`2/3`); hoy va en el color de acento
+del tema. A diferencia del cumplimiento de `protas stats`, la gráfica mide
+cada día por separado: una tarea que arrastraste tres días cuenta como
+pendiente en cada uno. Un clic en una entrada la
 completa o la reabre (`protas done` / `protas undone`). Las menciones de
 proyecto no responden al clic: completar una completa el proyecto entero,
 y eso se hace desde la TUI.
