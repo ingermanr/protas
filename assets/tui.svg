@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="954" height="372" viewBox="0 0 954 372" role="img" aria-label="La TUI de protas mostrando el día de hoy">
+<rect width="100%" height="100%" rx="10" fill="#1e1e2e"/>
+<g font-family="JetBrains Mono, DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="16" xml:space="preserve">
+<text x="16.0" y="32.0" fill="#cdd6f4" font-weight="bold"> protas - 2026-11-13 - notas</text>
+<text x="16.0" y="52.0" fill="#cdd6f4"> 5 pendientes | 1 hechas | 1 proyectos</text>
+<text x="16.0" y="72.0" fill="#cdd6f4">-----------------------------------------------------------------------------------------------</text>
+<text x="16.0" y="92.0" fill="#cdd6f4"> Foco del día: cerrar el informe antes del almuerzo.</text>
+<text x="16.0" y="112.0" fill="#cdd6f4"> Reunión con el equipo a las 16:00.</text>
+<text x="16.0" y="152.0" fill="#cdd6f4"> [ ] Preparar la reunión del lunes  (alta, 1h 30m)</text>
+<rect x="16.0" y="158.0" width="912.0" height="20.0" fill="#89b4fa"/>
+<text x="16.0" y="172.0" fill="#1e1e2e"> [ ] Informe trimestral  (proyecto 2/3)  (alta)</text>
+<text x="16.0" y="192.0" fill="#cdd6f4"> [ ] Responder el correo del proveedor  (de ayer)  (media, 20m)</text>
+<text x="16.0" y="212.0" fill="#cdd6f4"> [ ] Revisar pull requests  (baja, 45m)</text>
+<text x="16.0" y="232.0" fill="#cdd6f4"> [ ] Comprar café  (de ayer)</text>
+<text x="16.0" y="252.0" fill="#7f849c"> [x] Salir a caminar  (30m)</text>
+<text x="16.0" y="312.0" fill="#7f849c">? ayuda | j/k mover | espacio completar | a tarea | A subtarea | p proyecto | e editar</text>
+<text x="16.0" y="332.0" fill="#7f849c">! prioridad | E estimacion | n nota | x borrar | / buscar | enter abrir | esc volver | ←/→ dia</text>
+<text x="16.0" y="352.0" fill="#7f849c">h historia | s numeros | R recurrentes | q salir | r actualizar | g/G inicio/fin</text>
+</g></svg>

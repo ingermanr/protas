@@ -27,6 +27,10 @@
   <a href="#roadmap">Roadmap</a>
 </p>
 
+<p align="center">
+  <img src="assets/tui.svg" alt="La TUI de protas: la nota del día, tareas con prioridad y estimación, un proyecto con su avance y lo pendiente que llegó de ayer">
+</p>
+
 Cada día es un **espacio de trabajo** cuyo nombre es la fecha (`YYYY-MM-DD`).
 Dentro hay una nota libre y una lista de entradas. Lo que no se completó se
 arrastra al día siguiente de forma automática, y cualquier tarea puede
