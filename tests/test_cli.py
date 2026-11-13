@@ -1,6 +1,7 @@
 """Behaviour tests for the command line interface."""
 
 import contextlib
+import sys
 import io
 import json
 import tempfile
@@ -419,6 +420,46 @@ class DetailsCommandTest(unittest.TestCase):
                 self.assertIn(message, err)
         _, out, _ = self.run_cli("list", "--date", "2026-11-11")
         self.assertIn("(alta, 1h)", out)
+
+
+
+class NoCursesTest(unittest.TestCase):
+    """Python on Windows has no curses: the TUI says so, the commands work."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "protas.db")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_cli(self, *args):
+        from unittest import mock
+
+        out = io.StringIO()
+        err = io.StringIO()
+        hidden = {"curses": None, "_curses": None, "termios": None, "protas.tui": None}
+        with mock.patch.dict(sys.modules, hidden), contextlib.redirect_stdout(
+            out
+        ), contextlib.redirect_stderr(err):
+            code = cli.main(["--db", self.db, *args])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_the_tui_explains_that_it_needs_curses(self):
+        for args in ((), ("tui",)):
+            with self.subTest(args=args):
+                code, out, err = self.run_cli(*args)
+                self.assertEqual(code, 1)
+                self.assertEqual(out, "")
+                self.assertIn("la TUI necesita curses", err)
+                self.assertNotIn("Traceback", err)
+
+    def test_the_commands_still_work_without_curses(self):
+        code, out, _ = self.run_cli("add", "Comprar pan", "--date", "2026-11-11")
+        self.assertEqual(code, 0)
+        code, out, _ = self.run_cli("list", "--date", "2026-11-11")
+        self.assertEqual(code, 0)
+        self.assertIn("Comprar pan", out)
 
 
 if __name__ == "__main__":

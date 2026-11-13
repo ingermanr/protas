@@ -820,15 +820,23 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        if args.command == "tui":
-            from .tui import run_tui
-
-            run_tui(store, args.date, args.project)
-            return 0
-        if args.command is None:
-            from .tui import run_tui
-
-            run_tui(store, None, None)
+        if args.command in ("tui", None):
+            # The TUI is loaded only when it opens: curses and termios are
+            # missing on Windows, and every other command works without them.
+            try:
+                from .tui import run_tui
+            except ImportError:
+                print(
+                    "protas: la TUI necesita curses, que este Python no trae"
+                    " (en Windows no existe); los comandos funcionan igual,"
+                    " prueba protas list o protas --help",
+                    file=sys.stderr,
+                )
+                return 1
+            if args.command == "tui":
+                run_tui(store, args.date, args.project)
+            else:
+                run_tui(store, None, None)
             return 0
 
         handler = COMMANDS.get(args.command)

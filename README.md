@@ -35,19 +35,87 @@ su nota y sus tareas.
 
 ## Instalación
 
-Sin dependencias externas: solo Python 3.11 o superior.
+protas no tiene dependencias: solo necesita **Python 3.11 o superior**.
+Revisa tu versión con `python3 --version`.
+
+### Plataformas
+
+| Sistema | CLI | TUI | Panel de Omarchy |
+|---|---|---|---|
+| Linux (incluido Omarchy) | sí | sí | solo en Omarchy |
+| macOS | sí | sí | no |
+| Windows | sí | no: usa `curses`, que Python no trae en Windows | no |
+| iOS y Android | no | no | no |
+
+En Windows funcionan todos los comandos (`protas add`, `protas list`,
+`protas stats`…), pero `protas` y `protas tui` no abren la TUI. Dentro de
+WSL funciona todo menos el panel. El panel es un widget de la barra de
+Omarchy: no existe fuera de Omarchy.
+
+### 1. Conseguir el código
+
+Con git:
 
 ```bash
-# usar el modulo directamente
-python3 -m protas
-
-# o instalarlo como comando
-pip install -e .
-protas
+git clone https://github.com/ingermanr/protas.git
+cd protas
 ```
 
-La base de datos vive en `~/.local/share/protas/protas.db`. Se puede cambiar
-con la variable `PROTAS_DB` o con la opción `--db`.
+Sin git: en la página del repositorio, **Code → Download ZIP**,
+descomprímelo y abre una terminal dentro de la carpeta `protas`.
+
+### 2. Probarlo sin instalar
+
+Desde la carpeta del repositorio:
+
+```bash
+python3 -m protas            # abre la TUI de hoy
+python3 -m protas list       # o cualquier otro comando
+```
+
+### 3. Instalarlo como comando
+
+Instálalo con [uv](https://docs.astral.sh/uv/) o con
+[pipx](https://pipx.pypa.io/). Los dos lo dejan en su propio entorno y
+ponen el comando `protas` en `~/.local/bin`:
+
+```bash
+uv tool install .            # con uv
+pipx install .               # o con pipx
+```
+
+Si la terminal no encuentra `protas` después, agrega `~/.local/bin` al
+`PATH` con `uv tool update-shell` o `pipx ensurepath` y abre una terminal
+nueva.
+
+En Arch y Omarchy, `pip install` fuera de un entorno virtual no funciona:
+el Python del sistema lo rechaza (`externally-managed-environment`). Por
+eso se usa `uv` o `pipx`. Para instalar `pipx` ahí:
+`sudo pacman -S python-pipx`.
+
+La instalación copia el código: después puedes borrar la carpeta del
+repositorio y `protas` sigue funcionando.
+
+### Actualizar y desinstalar
+
+```bash
+git pull                             # o descarga el ZIP de nuevo
+uv tool install --reinstall .        # con uv
+pipx install --force .               # con pipx
+
+uv tool uninstall protas             # desinstalar con uv
+pipx uninstall protas                # desinstalar con pipx
+```
+
+Desinstalar no borra tus datos.
+
+### Dónde quedan tus datos
+
+La base de datos está en `~/.local/share/protas/protas.db`, o en
+`$XDG_DATA_HOME/protas/protas.db` si definiste esa variable. En Windows es
+`C:\Users\<usuario>\.local\share\protas\protas.db`. Puedes usar otra
+con la variable `PROTAS_DB` o con la opción `--db`. `protas doctor` dice
+cuál está usando.
 
 ## Uso diario
 
@@ -377,7 +445,7 @@ de esquema entiende. No abre la base.
 `protas doctor` revisa la base sin crearla, migrarla ni escribirla:
 
 ```
-database:     /home/tu/.local/share/protas/protas.db
+database:     /home/usuario/.local/share/protas/protas.db
 schema:       version 3, up to date
 integrity:    ok
 search index: ok

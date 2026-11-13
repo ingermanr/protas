@@ -33,7 +33,8 @@ user authorizes push, merge, release and the OPR PR. Test runner:
 
 ## Tasks
 
-- [ ] T1 (S1, S2, S4): README install, download and platforms. Route: inline.
+- [x] T1 (S1, S2, S4): README install, download and platforms; the TUI says
+  it needs curses instead of a traceback. Route: inline. Commit: see L4.
 - [ ] T2 (S5): portable panel and new plugin id with cleanup of the old one.
   Route: inline. Risk: item 3 (renames the plugin id an installed panel uses).
 - [ ] T3 (S3, S6): Arch package, desktop entry and icon, local build and
@@ -59,3 +60,13 @@ user authorizes push, merge, release and the OPR PR. Test runner:
   GitHub release tarball, `.omarchy/package.json` with an upstream watch, a
   PR a maintainer approves.
 - L3 (2026-11-13, user): "dale" to the three-delivery plan.
+- L4 (2026-11-13): T1. README "Instalación" rewritten: platforms table (CLI
+  everywhere, TUI Linux/macOS/WSL, panel only Omarchy, no iOS/Android),
+  `git clone` or Code → Download ZIP, `python3 -m protas` without
+  installing, `uv tool install .` or `pipx install .`, why `pip install`
+  fails on Arch (externally managed), update/uninstall, where the data
+  lives. `uv tool install .` checked in a scratch tool dir: installs
+  `protas` with the panel files. `protas`/`protas tui` without curses exit 1
+  with "la TUI necesita curses…" (RED observed: ModuleNotFoundError
+  traceback). Found: `ingermanr/protas` is private, so nobody else can clone
+  it or build an OPR package from it until the user makes it public.
