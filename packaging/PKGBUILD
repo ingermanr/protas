@@ -15,7 +15,7 @@ depends=('python')
 makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
 optdepends=('omarchy: the optional bar panel, installed with protas omarchy install')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('0000000000000000000000000000000000000000000000000000000000000000')
+sha256sums=('998cd3c6de73a091baf2c74ae5ee0bd7a6a447edd1e545333da9a3b50dec6e1b')
 
 build() {
   cd "$pkgname-$pkgver"
