@@ -25,14 +25,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # The first numbered shape: what the move from days to workspaces produces.
 BASELINE_VERSION = 3
 
 # The shape of version 3, frozen. The move from days to workspaces builds
 # exactly this, and the steps below take it from there.
-SCHEMA_V3 = """
+SCHEMA_HEAD = """
 CREATE TABLE IF NOT EXISTS workspaces (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     kind        TEXT NOT NULL CHECK (kind IN ('day', 'project')),
@@ -46,7 +46,15 @@ CREATE TABLE IF NOT EXISTS workspaces (
 CREATE INDEX IF NOT EXISTS idx_workspaces_parent ON workspaces(parent_id);
 CREATE INDEX IF NOT EXISTS idx_workspaces_kind   ON workspaces(kind);
 
-CREATE TABLE IF NOT EXISTS tasks (
+"""
+
+TASKS_INDEXES = """CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent    ON tasks(parent_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_origin    ON tasks(origin_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_project   ON tasks(project_id);
+"""
+
+TASKS_TABLE_V3 = """CREATE TABLE IF NOT EXISTS tasks (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     project_id   INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
@@ -58,12 +66,28 @@ CREATE TABLE IF NOT EXISTS tasks (
     position     INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL
 );
+""" + TASKS_INDEXES
 
-CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_parent    ON tasks(parent_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_origin    ON tasks(origin_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_project   ON tasks(project_id);
+# Version 5: every entry can say how important it is and how much time it
+# takes. Two nullable columns at the end, so the 4 to 5 step is an
+# ADD COLUMN and a migrated database ends with the same shape as a new one.
+TASKS_TABLE_V5 = """CREATE TABLE IF NOT EXISTS tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    project_id   INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
+    parent_id    INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    text         TEXT NOT NULL,
+    done         INTEGER NOT NULL DEFAULT 0,
+    done_at      TEXT,
+    origin_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    position     INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    priority     INTEGER CHECK (priority IS NULL OR priority IN (1, 2, 3)),
+    estimate     INTEGER CHECK (estimate IS NULL OR estimate > 0)
+);
+""" + TASKS_INDEXES
 
+SCHEMA_TAIL = """
 -- Ledger of everything that ever travelled from one day to another.
 -- It makes the rollover idempotent: a task is never carried twice into
 -- the same day, even if the copy was deleted afterwards.
@@ -94,6 +118,8 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_workspace ON events(workspace_id, created_at);
 """
 
+SCHEMA_V3 = SCHEMA_HEAD + TASKS_TABLE_V3 + SCHEMA_TAIL
+
 # Version 4: recurring tasks. A rule names the days it fires on, and the
 # ledger records the task it produced on each of them, so opening a day
 # twice never spawns twice and a deleted task does not come back that day.
@@ -116,7 +142,11 @@ CREATE INDEX IF NOT EXISTS idx_recurrence_tasks_task ON recurrence_tasks(task_id
 """
 
 # What a new database gets: the newest shape.
-SCHEMA = SCHEMA_V3 + SCHEMA_RECURRENCES
+SCHEMA = SCHEMA_HEAD + TASKS_TABLE_V5 + SCHEMA_TAIL + SCHEMA_RECURRENCES
+
+# The shape of version 4, frozen: the baseline plus the recurring tables.
+# Tests use it to build a database as an installed protas left it.
+SCHEMA_V4 = SCHEMA_V3 + SCHEMA_RECURRENCES
 
 # The search index is optional: some SQLite builds ship without FTS5 and
 # the application must still start there, falling back to a plain scan.
@@ -600,7 +630,26 @@ def _add_recurrences(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
-MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {3: _add_recurrences}
+# Version 5: the two columns every entry may carry. Additive: no row moves,
+# and the two CHECKs keep the stored values inside what the commands accept.
+SCHEMA_TASK_DETAILS = """
+ALTER TABLE tasks ADD COLUMN priority INTEGER
+    CHECK (priority IS NULL OR priority IN (1, 2, 3));
+ALTER TABLE tasks ADD COLUMN estimate INTEGER
+    CHECK (estimate IS NULL OR estimate > 0);
+"""
+
+
+def _add_task_details(conn: sqlite3.Connection) -> None:
+    """Version 4 to 5: priority and estimate on every entry."""
+    for statement in _statements(SCHEMA_TASK_DETAILS):
+        conn.execute(statement)
+
+
+MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
+    3: _add_recurrences,
+    4: _add_task_details,
+}
 
 
 def version_backup_path(path: Path, version: int, attempt: int = 1) -> Path:

@@ -1,4 +1,8 @@
-"""Schema 4: the tables of the recurring tasks reach every database."""
+"""Schema 4: the tables of the recurring tasks reach every database.
+
+The current schema is newer; these tests keep the version numbers from
+``db.SCHEMA_VERSION`` so they stay about the recurring tables.
+"""
 
 import sqlite3
 import tempfile
@@ -13,7 +17,8 @@ from tests.test_updates_chain import LEGACY_SCHEMA
 NEW_TABLES = {"recurrences", "recurrence_tasks"}
 DATA = (
     "SELECT * FROM workspaces ORDER BY id",
-    "SELECT * FROM tasks ORDER BY id",
+    "SELECT id, workspace_id, project_id, parent_id, text, done, done_at, "
+    "origin_id, position, created_at FROM tasks ORDER BY id",
     "SELECT * FROM carries ORDER BY origin_id, workspace_id",
     "SELECT * FROM events ORDER BY id",
 )
@@ -52,14 +57,14 @@ class SchemaV4Test(unittest.TestCase):
             store.set_done(first.id)
             store.close()
 
-    def test_a_new_database_is_version_4_and_has_the_tables(self):
+    def test_a_new_database_has_the_recurring_tables(self):
         Store(path=self.db).close()
 
-        self.assertEqual(self.version(), [("4",)])
+        self.assertEqual(self.version(), [(str(db.SCHEMA_VERSION),)])
         self.assertLessEqual(NEW_TABLES, self.tables())
         self.assertEqual([p.name for p in self.dir.iterdir()], ["protas.db"])
 
-    def test_the_version_command_names_schema_4(self):
+    def test_the_version_command_names_the_current_schema(self):
         import contextlib
         import io
 
@@ -71,7 +76,9 @@ class SchemaV4Test(unittest.TestCase):
             code = cli.main(["--db", str(self.db), "version"])
 
         self.assertEqual(code, 0)
-        self.assertEqual(out.getvalue(), f"protas {protas.__version__} (schema 4)\n")
+        self.assertEqual(
+            out.getvalue(), f"protas {protas.__version__} (schema {db.SCHEMA_VERSION})\n"
+        )
 
     def test_a_version_3_database_is_updated_and_keeps_every_row(self):
         self.build_version_3()
@@ -82,7 +89,7 @@ class SchemaV4Test(unittest.TestCase):
 
         Store(path=self.db, notify=notices.append).close()
 
-        self.assertEqual(self.version(), [("4",)])
+        self.assertEqual(self.version(), [(str(db.SCHEMA_VERSION),)])
         self.assertLessEqual(NEW_TABLES, self.tables())
         self.assertEqual([self.query(sql) for sql in DATA], before)
         self.assertEqual(self.query("SELECT count(*) FROM recurrences"), [(0,)])
@@ -92,7 +99,7 @@ class SchemaV4Test(unittest.TestCase):
         self.assertEqual(self.version(copy), [("3",)])
         self.assertFalse(NEW_TABLES & self.tables(copy))
         self.assertEqual(len(notices), 1)
-        self.assertIn("from version 3 to 4", notices[0])
+        self.assertIn(f"from version 3 to {db.SCHEMA_VERSION}", notices[0])
         self.assertIn(str(copy), notices[0])
 
     def doctor(self):
@@ -112,7 +119,7 @@ class SchemaV4Test(unittest.TestCase):
         code, out = self.doctor()
 
         self.assertEqual(code, 0)
-        self.assertIn("schema:       version 4, up to date\n", out)
+        self.assertIn(f"schema:       version {db.SCHEMA_VERSION}, up to date\n", out)
         self.assertIn("integrity:    ok\n", out)
         self.assertIn("copies:       none\n", out)
 
@@ -122,14 +129,16 @@ class SchemaV4Test(unittest.TestCase):
         code, out = self.doctor()
         self.assertEqual(code, 0)
         self.assertIn(
-            "schema:       version 3, it will be updated to 4 when protas opens it\n", out
+            f"schema:       version 3, it will be updated to "
+            f"{db.SCHEMA_VERSION} when protas opens it\n",
+            out,
         )
         self.assertEqual(self.version(), [("3",)])
 
         Store(path=self.db).close()
         code, out = self.doctor()
         self.assertEqual(code, 0)
-        self.assertIn("schema:       version 4, up to date\n", out)
+        self.assertIn(f"schema:       version {db.SCHEMA_VERSION}, up to date\n", out)
         self.assertIn("copies:       protas.db.v3.bak\n", out)
 
     def test_an_updated_database_opens_again_without_another_copy(self):
@@ -162,7 +171,7 @@ class SchemaV4Test(unittest.TestCase):
         self.assertFalse(NEW_TABLES & self.tables())
         self.assertEqual([self.query(sql) for sql in DATA], before)
 
-    def test_a_database_from_before_the_workspaces_reaches_version_4(self):
+    def test_a_database_from_before_the_workspaces_reaches_the_current_version(self):
         conn = sqlite3.connect(str(self.db))
         conn.executescript(LEGACY_SCHEMA)
         conn.close()
@@ -177,7 +186,7 @@ class SchemaV4Test(unittest.TestCase):
         finally:
             store.close()
 
-        self.assertEqual(self.version(), [("4",)])
+        self.assertEqual(self.version(), [(str(db.SCHEMA_VERSION),)])
         self.assertLessEqual(NEW_TABLES, self.tables())
         self.assertIn("Tarea vieja", texts)
         names = sorted(p.name for p in self.dir.iterdir())
