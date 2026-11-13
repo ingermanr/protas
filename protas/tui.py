@@ -16,13 +16,14 @@ from datetime import timedelta
 from typing import Optional
 
 from . import text as text_tools
-from .models import Hit
+from .models import Hit, format_estimate, parse_estimate, priority_label
 from .store import Store, Task, Workspace, check_date, describe_event, today
 
 HELP = (
     "? ayuda | j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
-    "e editar | n nota | x borrar | / buscar | enter abrir | esc volver | ←/→ dia | "
-    "h historia | s numeros | q salir | r actualizar | g/G inicio/fin"
+    "e editar | ! prioridad | E estimacion | n nota | x borrar | / buscar | "
+    "enter abrir | esc volver | ←/→ dia | h historia | s numeros | q salir | "
+    "r actualizar | g/G inicio/fin"
 )
 
 
@@ -34,7 +35,7 @@ KEYS = (
     ("a", "nueva tarea"),
     ("A", "nueva subtarea (la tarea pasa a ser proyecto)"),
     ("p", "promover la tarea a proyecto"),
-    ("e", "editar el texto"),
+    ("e / ! / E", "editar: texto / prioridad / estimacion"),
     ("x", "borrar la entrada"),
     ("n", "editar la nota"),
     ("/", "buscar en tareas, notas, dias y proyectos"),
@@ -316,6 +317,8 @@ def _draw(
                 label += f"  (proyecto {state['done']}/{state['total']})" if state["total"] else "  (proyecto)"
             else:
                 label += store.origin_label(task, workspace.date)
+            if task.details:
+                label += f"  ({task.details})"
             line = f" {'    ' * depth}[{marker}] {label}"
             attribute = curses.A_DIM if store.is_done(task) else curses.A_NORMAL
             if index + offset == selection:
@@ -562,6 +565,11 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                     elif editor.kind == "edit":
                         store.set_text(editor.target_id, editor.text())
                         message = "tarea actualizada"
+                    elif editor.kind == "estimate":
+                        store.set_details(
+                            editor.target_id, estimate=parse_estimate(editor.text())
+                        )
+                        message = "estimacion actualizada"
                     else:
                         target_workspace = editor.workspace_id or workspace.id
                         task = store.add_task(
@@ -685,6 +693,25 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 editor.buffer = store.title_of(task)
             else:
                 message = "no hay ninguna entrada que editar"
+        elif ch == ord("!"):
+            if rows:
+                task, _ = rows[selection]
+                next_priority = {None: 1, 1: 2, 2: 3, 3: None}[task.priority]
+                store.set_details(task.id, priority=next_priority)
+                message = f"prioridad: {priority_label(next_priority) or 'sin prioridad'}"
+            else:
+                message = "no hay ninguna entrada que priorizar"
+        elif ch == ord("E"):
+            if rows:
+                task, _ = rows[selection]
+                editor = Editor(
+                    "Estimacion (30m, 1h, 1h30, ninguna): ",
+                    "estimate",
+                    target_id=task.id,
+                )
+                editor.buffer = format_estimate(task.estimate)
+            else:
+                message = "no hay ninguna entrada que estimar"
         elif ch == ord("n"):
             editor = note_editor(store.note(workspace.id))
             view = "tasks"

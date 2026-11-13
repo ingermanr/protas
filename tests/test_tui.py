@@ -185,7 +185,7 @@ class TuiSmokeTest(unittest.TestCase):
 
         lines = _help_lines()
         text = "\n".join(lines)
-        for key in ("j / k", "g / G", "espacio", "enter", "a", "A", "p", "e", "x", "n",
+        for key in ("j / k", "g / G", "espacio", "enter", "a", "A", "p", "e / ! / E", "x", "n",
                     "h", "s", "r", "←  / →", "esc", "?", "q"):
             self.assertTrue(
                 any(line.strip().startswith(key + "  ") for line in lines), f"{key!r} in\n{text}"
@@ -631,3 +631,117 @@ class TuiSearchTest(unittest.TestCase):
         self.assertIn("/ buscar", HELP)
         self.assertTrue(any(line.strip().startswith("/  ") for line in _help_lines()))
         self.assertLessEqual(len(_help_lines()), 20)
+
+
+class TuiDetailsTest(unittest.TestCase):
+    """Priority and estimate from the workspace keys."""
+
+    def setUp(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "protas.db")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def drive(self, steps):
+        import select
+
+        master, slave = pty.openpty()
+        env = dict(os.environ)
+        env["TERM"] = "xterm-256color"
+        env["PYTHONPATH"] = str(REPO_ROOT)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "protas", "--db", self.db, "tui"],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            cwd=str(REPO_ROOT),
+            env=env,
+            close_fds=True,
+        )
+        os.close(slave)
+
+        def screen():
+            data = b""
+            while select.select([master], [], [], 0.5)[0]:
+                data += os.read(master, 65536)
+            return data.decode("utf-8", "replace")
+
+        screens = []
+        try:
+            time.sleep(1.5)
+            screen()
+            for step in steps:
+                os.write(master, step)
+                screens.append(screen())
+            os.write(master, b"q")
+            proc.wait(timeout=15)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=5)
+            os.close(master)
+        return proc.returncode, screens
+
+    def add_task(self, text, **details):
+        from protas.store import Store
+
+        store = Store(path=self.db)
+        try:
+            day = store.open_day()
+            return store.add_task(text, day.id, **details).id
+        finally:
+            store.close()
+
+    def read(self, task_id):
+        from protas.store import Store
+
+        store = Store(path=self.db)
+        try:
+            return store.task(task_id)
+        finally:
+            store.close()
+
+    def test_the_bang_sets_a_priority_and_the_screen_shows_the_details(self):
+        task_id = self.add_task("Comprar pan", estimate=60)
+
+        code, screens = self.drive([b"!"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("alta, 1h)", screens[0])
+        task = self.read(task_id)
+        self.assertEqual(task.priority, 1)
+        self.assertEqual(task.estimate, 60)
+
+    def test_the_bang_goes_through_the_three_and_back_to_none(self):
+        task_id = self.add_task("Comprar pan")
+
+        code, screens = self.drive([b"!", b"!", b"!", b"!"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("alta", screens[0])
+        self.assertIn("media", screens[1])
+        self.assertIn("baja", screens[2])
+        self.assertIn("sin prioridad", screens[3])
+        self.assertIsNone(self.read(task_id).priority)
+
+    def test_shift_e_edits_the_estimate(self):
+        task_id = self.add_task("Comprar pan", priority=2)
+
+        code, screens = self.drive([b"E", b"1h30\r"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Estimacion", screens[0])
+        task = self.read(task_id)
+        self.assertEqual(task.estimate, 90)
+        self.assertEqual(task.priority, 2)
+
+    def test_the_estimate_editor_receives_the_current_value(self):
+        task_id = self.add_task("Comprar pan", estimate=45)
+
+        code, screens = self.drive([b"E", b"\r"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("45m", screens[0])
+        self.assertEqual(self.read(task_id).estimate, 45)

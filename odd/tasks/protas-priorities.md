@@ -33,10 +33,10 @@ because the user did not ask for it.
 - [x] T1 (S1, S2): commit `6918d2c`. Schema 5 adds `priority` and `estimate` to `tasks`, the
   4 to 5 step, and the version expectations of the existing tests. Route:
   inline. Risk: item 1 (schema migration), own commit.
-- [x] T2 (S1, S3, S4): commit `PENDING-T2`. `Task` fields, parse and format helpers, `add_task`
+- [x] T2 (S1, S3, S4): commit `da02213`. `Task` fields, parse and format helpers, `add_task`
   options, a `set` method, ordering by priority and estimate; CLI `add
   --priority/--estimate`, `protas set`, list/show/JSON output. Route: inline.
-- [ ] T3 (S1, S5): TUI shows priority and estimate, `!` cycles the priority and
+- [x] T3 (S1, S5): commit `PENDING-T3`. TUI shows priority and estimate, `!` cycles the priority and
   `E` edits the estimate; help updated. Route: inline.
 - [ ] T4 (S1): `stats` sums the estimate of each day in text, JSON and the TUI.
   Route: inline.
@@ -66,7 +66,7 @@ because the user did not ask for it.
   baseline shape. `SCHEMA_V3` stays frozen, `SCHEMA_V4` is the frozen
   version 4 the tests pin, and `tests/support.py` gained
   `at_version_4`/`pin_version_4`.
-- L6 (2026-11-12): T2 done in `PENDING-T2`; 326 tests green. `store.has_details`
+- L6 (2026-11-12): T2 done in `da02213`; 326 tests green. `store.has_details`
   reads the columns and everything that touches them asks first, so the
   pinned old schemas of the update chain keep working. The details are written
   with a second UPDATE after the INSERT, so the pinned v3/v4 schemas and their
@@ -78,3 +78,7 @@ because the user did not ask for it.
   only. Tests were written after the implementation, so no RED was observed
   for this task; the differential check against the base commit was run
   instead.
+- L7 (2026-11-12): T3 done in `PENDING-T3`; 330 tests green. The list line in the
+  TUI carries the details, `!` cycles none, alta, media, baja, none and `E`
+  opens the estimate editor prefilled with the current value. The help keeps
+  one line for the three editing keys, so the screen still fits 20 lines.
