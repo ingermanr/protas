@@ -7,3 +7,5 @@ protas-export/
 *.db-wal
 *.db-shm
 .atl/
+build/
+dist/
