@@ -25,12 +25,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # The first numbered shape: what the move from days to workspaces produces.
 BASELINE_VERSION = 3
 
-SCHEMA = """
+# The shape of version 3, frozen. The move from days to workspaces builds
+# exactly this, and the steps below take it from there.
+SCHEMA_V3 = """
 CREATE TABLE IF NOT EXISTS workspaces (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     kind        TEXT NOT NULL CHECK (kind IN ('day', 'project')),
@@ -91,6 +93,30 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_workspace ON events(workspace_id, created_at);
 """
+
+# Version 4: recurring tasks. A rule names the days it fires on, and the
+# ledger records the task it produced on each of them, so opening a day
+# twice never spawns twice and a deleted task does not come back that day.
+SCHEMA_RECURRENCES = """
+CREATE TABLE IF NOT EXISTS recurrences (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    text        TEXT NOT NULL,
+    pattern     TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS recurrence_tasks (
+    recurrence_id INTEGER NOT NULL REFERENCES recurrences(id) ON DELETE CASCADE,
+    date          TEXT NOT NULL,
+    task_id       INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    PRIMARY KEY (recurrence_id, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_recurrence_tasks_task ON recurrence_tasks(task_id);
+"""
+
+# What a new database gets: the newest shape.
+SCHEMA = SCHEMA_V3 + SCHEMA_RECURRENCES
 
 # The search index is optional: some SQLite builds ship without FTS5 and
 # the application must still start there, falling back to a plain scan.
@@ -409,7 +435,7 @@ def _migrate_legacy(conn: sqlite3.Connection, path: Path) -> Path | None:
             # Another protas migrated it while this one waited for the lock.
             conn.execute("ROLLBACK")
             return None
-        for statement in _statements(LEGACY_RENAME + SCHEMA):
+        for statement in _statements(LEGACY_RENAME + SCHEMA_V3):
             conn.execute(statement)
         _migrate_v2(conn)
         for statement in _statements(LEGACY_DROP):
@@ -566,10 +592,15 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
 # A step receives the connection inside the transaction of the update. It
 # must not commit, roll back or call ``executescript`` (which commits).
 #
-# The move from days to workspaces builds SCHEMA directly, so it has to
-# keep producing the baseline shape: when the first step is added, give
-# that move its own frozen copy of the version 3 schema.
-MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {}
+# The move from days to workspaces builds SCHEMA_V3, the baseline shape,
+# and the steps take it from there like any other version 3 database.
+def _add_recurrences(conn: sqlite3.Connection) -> None:
+    """Version 3 to 4: the tables of the recurring tasks. Nothing else moves."""
+    for statement in _statements(SCHEMA_RECURRENCES):
+        conn.execute(statement)
+
+
+MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {3: _add_recurrences}
 
 
 def version_backup_path(path: Path, version: int, attempt: int = 1) -> Path:

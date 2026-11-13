@@ -14,6 +14,7 @@ from unittest import mock
 
 from protas import cli
 from protas.store import Store
+from tests.support import pin_version_3
 
 
 def add_priority(conn):
@@ -54,6 +55,7 @@ def newer(steps, version):
 
 class ChainCase(unittest.TestCase):
     def setUp(self):
+        pin_version_3(self)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.dir = Path(self.tmp.name)

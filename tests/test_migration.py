@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from protas.store import Store
+from tests.support import pin_version_3
 
 LEGACY_SCHEMA = """
 CREATE TABLE days (
@@ -335,6 +336,7 @@ class BackupTest(unittest.TestCase):
     """The copy taken before migrating is the database being migrated."""
 
     def setUp(self):
+        pin_version_3(self)
         from protas import db as db_module
 
         self.db_module = db_module

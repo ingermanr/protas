@@ -17,6 +17,7 @@ from unittest import mock
 from protas import cli
 from protas.db import MigrationError
 from protas.store import Store
+from tests.support import pin_version_3
 
 
 def add_priority(conn):
@@ -39,6 +40,7 @@ def newer_protas(steps, version):
 
 class UpdateCase(unittest.TestCase):
     def setUp(self):
+        pin_version_3(self)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "protas.db"

@@ -16,10 +16,12 @@ from unittest import mock
 import protas
 from protas import cli
 from protas.store import Store
+from tests.support import pin_version_3
 
 
 class DoctorCase(unittest.TestCase):
     def setUp(self):
+        pin_version_3(self)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.db = Path(self.tmp.name) / "protas.db"
