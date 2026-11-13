@@ -86,19 +86,25 @@ class Store:
     def ensure_day(self, date_str: str) -> Workspace:
         """Return the day workspace, creating it when missing."""
         check_date(date_str)
-        row = self.conn.execute(
+        row = self._day_row(date_str)
+        if row is None:
+            # Another protas may create the same day between the look and
+            # the insert: the date is unique, so the second one is ignored
+            # and both end up reading the same row.
+            self.conn.execute(
+                """INSERT OR IGNORE INTO workspaces
+                   (kind, title, date, note, parent_id, created_at)
+                   VALUES ('day', ?, ?, '', NULL, ?)""",
+                (date_str, date_str, _now()),
+            )
+            self.conn.commit()
+            row = self._day_row(date_str)
+        return self._to_workspace(row)
+
+    def _day_row(self, date_str: str) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
             "SELECT * FROM workspaces WHERE kind = 'day' AND date = ?", (date_str,)
         ).fetchone()
-        if row is not None:
-            return self._to_workspace(row)
-
-        cursor = self.conn.execute(
-            """INSERT INTO workspaces (kind, title, date, note, parent_id, created_at)
-               VALUES ('day', ?, ?, '', NULL, ?)""",
-            (date_str, date_str, _now()),
-        )
-        self.conn.commit()
-        return self.workspace(cursor.lastrowid)
 
     def create_project(self, title: str, parent_id: int | None = None) -> Workspace:
         """Create a project workspace."""
@@ -654,6 +660,17 @@ class Store:
                 source["project_id"], target_workspace.id
             ):
                 # The day already has this project on its agenda.
+                continue
+            # The trip is written down before the copy is made. The ledger
+            # takes one row per entry and day, so when two protas carry at
+            # once the second one waits here, finds the trip taken and
+            # leaves the entry alone.
+            claim = self.conn.execute(
+                "INSERT OR IGNORE INTO carries (origin_id, workspace_id, created_at) "
+                "VALUES (?, ?, ?)",
+                (source["id"], target_workspace.id, _now()),
+            )
+            if claim.rowcount == 0:
                 continue
             carried.append(self._copy_entry(source, target_workspace.id))
 
