@@ -115,6 +115,10 @@ no se compila ni se publica. No uses nunca `epoch` sin acordarlo en el PR.
   en `.gitignore`).
 - La barra no usa el `PATH` de la terminal: por eso el panel guarda la ruta
   completa del comando.
+- Como el panel guarda la ruta completa, tener dos `protas` instalados
+  (por ejemplo uno de desarrollo y el del paquete) y alternarlos en la
+  terminal reemplaza el panel y reinicia la barra en cada cambio. Para
+  desarrollar, exporta `PROTAS_NO_PANEL_UPDATE=1`.
 - En omarchy-pkgs, un PR que no es borrador y solo toca `pkgbuilds/` se
   fusiona y publica solo al pasar CI. Los autores que no son colaboradores
   necesitan que un mantenedor ponga la etiqueta `build-approved` para que

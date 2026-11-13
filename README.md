@@ -132,8 +132,9 @@ Al actualizar no tienes que hacer nada más:
   [Actualizaciones](#actualizaciones)).
 - **El panel de Omarchy:** si lo instalaste, el primer comando de protas que
   corras en una terminal después de actualizar lo pone al día y reinicia la
-  barra una vez. Lo mismo pasa si reinstalas protas en otro lugar. Para
-  hacerlo a mano: `protas omarchy install`.
+  barra una vez. Lo mismo pasa si reinstalas protas en otro lugar. Si la
+  barra no responde, protas te avisa y te pide correr
+  `protas omarchy install`, que es también la forma de hacerlo a mano.
 
 ### Desinstalar
 
