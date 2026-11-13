@@ -12,6 +12,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from tests.support import child_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -22,7 +23,7 @@ class TuiSmokeTest(unittest.TestCase):
             db = str(Path(tmp) / "protas.db")
             master, slave = pty.openpty()
 
-            env = dict(os.environ)
+            env = child_env()
             env["TERM"] = "xterm-256color"
             env["PYTHONPATH"] = str(REPO_ROOT)
 
@@ -68,7 +69,7 @@ class TuiSmokeTest(unittest.TestCase):
             db = str(Path(tmp) / "protas.db")
             master, slave = pty.openpty()
 
-            env = dict(os.environ)
+            env = child_env()
             env["TERM"] = "xterm-256color"
             env["PYTHONPATH"] = str(REPO_ROOT)
 
@@ -139,7 +140,7 @@ class TuiSmokeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = str(Path(tmp) / "protas.db")
             master, slave = pty.openpty()
-            env = dict(os.environ)
+            env = child_env()
             env["TERM"] = "xterm-256color"
             env["PYTHONPATH"] = str(REPO_ROOT)
             proc = subprocess.Popen(
@@ -202,7 +203,7 @@ class TuiSmokeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = str(Path(tmp) / "protas.db")
             master, slave = pty.openpty()
-            env = dict(os.environ)
+            env = child_env()
             env["TERM"] = "xterm-256color"
             env["PYTHONPATH"] = str(REPO_ROOT)
             proc = subprocess.Popen(
@@ -359,7 +360,7 @@ class TuiSmokeTest(unittest.TestCase):
             store.close()
 
             master, slave = pty.openpty()
-            env = dict(os.environ)
+            env = child_env()
             env["TERM"] = "xterm-256color"
             env["PYTHONPATH"] = str(REPO_ROOT)
             proc = subprocess.Popen(
@@ -490,7 +491,7 @@ class TuiSearchTest(unittest.TestCase):
         import select
 
         master, slave = pty.openpty()
-        env = dict(os.environ)
+        env = child_env()
         env["TERM"] = "xterm-256color"
         env["PYTHONPATH"] = str(REPO_ROOT)
         proc = subprocess.Popen(
@@ -649,7 +650,7 @@ class TuiDetailsTest(unittest.TestCase):
         import select
 
         master, slave = pty.openpty()
-        env = dict(os.environ)
+        env = child_env()
         env["TERM"] = "xterm-256color"
         env["PYTHONPATH"] = str(REPO_ROOT)
         proc = subprocess.Popen(
@@ -861,3 +862,43 @@ class TuiRecurringTest(unittest.TestCase):
 
         self.assertIn("R recurrentes", HELP)
         self.assertLessEqual(len(_help_lines()), 20)
+
+
+class TestHarnessIsolationTest(unittest.TestCase):
+    """The TUI tests run protas in a terminal, where it refreshes an
+    installed Omarchy panel. They must never reach the real one."""
+
+    def setUp(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.db = str(root / "protas.db")
+        self.log = root / "omarchy.log"
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        for name, body in (
+            ("omarchy", f'echo "$@" >> "{self.log}"\n'),
+            ("protas", "exit 0\n"),
+        ):
+            script = bin_dir / name
+            script.write_text("#!/bin/sh\n" + body)
+            script.chmod(0o755)
+        panel = root / "config" / "omarchy" / "plugins" / "io.github.ingermanr.protas"
+        panel.mkdir(parents=True)
+        (panel / "Panel.qml").write_text("an outdated panel")
+        self.env = {
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "XDG_CONFIG_HOME": str(root / "config"),
+        }
+
+    drive = TuiDetailsTest.drive
+
+    def test_the_tui_harness_never_refreshes_a_panel(self):
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, self.env):
+            code, _ = self.drive([b"j"])
+
+        self.assertEqual(code, 0)
+        self.assertFalse(self.log.exists(), self.log.read_text() if self.log.exists() else "")

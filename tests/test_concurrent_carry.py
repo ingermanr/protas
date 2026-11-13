@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from protas.store import Store
+from tests.support import child_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROCESSES = 8
@@ -23,7 +24,7 @@ ROUNDS = 20
 
 
 def run_many(db, *args):
-    env = dict(os.environ, PYTHONPATH=str(REPO_ROOT))
+    env = child_env(PYTHONPATH=str(REPO_ROOT))
     procs = [
         subprocess.Popen(
             [sys.executable, "-m", "protas", "--db", db, *args],

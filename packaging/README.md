@@ -119,6 +119,11 @@ no se compila ni se publica. No uses nunca `epoch` sin acordarlo en el PR.
   (por ejemplo uno de desarrollo y el del paquete) y alternarlos en la
   terminal reemplaza el panel y reinicia la barra en cada cambio. Para
   desarrollar, exporta `PROTAS_NO_PANEL_UPDATE=1`.
+- Los tests que lanzan protas como proceso aparte deben usar
+  `child_env()` de `tests/support.py`: la TUI corre en una terminal y, con
+  el entorno real, reemplazaría el panel instalado y reiniciaría la barra
+  de quien corre las pruebas (pasó una vez, y se vio como un test
+  intermitente de la TUI).
 - En omarchy-pkgs, un PR que no es borrador y solo toca `pkgbuilds/` se
   fusiona y publica solo al pasar CI. Los autores que no son colaboradores
   necesitan que un mantenedor ponga la etiqueta `build-approved` para que

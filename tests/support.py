@@ -43,3 +43,20 @@ def pin_version_4(case):
     patcher = at_version_4()
     patcher.start()
     case.addCleanup(patcher.stop)
+
+
+def child_env(**extra):
+    """The environment for a protas the tests start as a separate process.
+
+    Run in a terminal, protas refreshes an installed Omarchy panel and
+    restarts the bar. A test must never do that to the machine running it,
+    so the refresh is off and the configuration folder points nowhere.
+    """
+    import os
+    import tempfile
+
+    env = dict(os.environ)
+    env["PROTAS_NO_PANEL_UPDATE"] = "1"
+    env["XDG_CONFIG_HOME"] = os.path.join(tempfile.gettempdir(), "protas-tests-no-config")
+    env.update(extra)
+    return env
