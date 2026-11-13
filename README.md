@@ -389,6 +389,9 @@ código está en `protas/integrations/omarchy/german-ds.protas/`.
 
 - Prioridades y estimación de tiempo.
 - Crear y quitar tareas recurrentes desde la TUI.
+- Validar que el README y las instrucciones de uso sirvan a cualquiera que
+  clone o descargue el repositorio, con un aviso claro de que el panel de
+  Omarchy no está disponible en Windows ni en iOS.
 
 ## Licencia
 
