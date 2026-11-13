@@ -296,5 +296,115 @@ class InvalidDateTest(unittest.TestCase):
         self.assertIn("Vale", out)
 
 
+class DetailsCommandTest(unittest.TestCase):
+    """Priority and estimate from the command line."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "protas.db")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_cli(self, *args):
+        out = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(["--db", self.db, *args])
+        return code, out.getvalue(), err.getvalue()
+
+    def add(self, text, *extra):
+        code, out, err = self.run_cli("add", text, "--date", "2026-11-11", *extra)
+        self.assertEqual(code, 0, err)
+        return int(out.strip())
+
+    def test_add_stores_the_priority_and_the_estimate(self):
+        self.add("Comprar pan", "--priority", "alta", "--estimate", "1h30")
+
+        code, out, _ = self.run_cli("list", "--date", "2026-11-11")
+
+        self.assertEqual(code, 0)
+        self.assertIn("Comprar pan  (alta, 1h 30m)", out)
+
+    def test_show_draws_the_details_next_to_the_entry(self):
+        self.add("Comprar pan", "--priority", "media", "--estimate", "45m")
+
+        code, out, _ = self.run_cli("show", "2026-11-11")
+
+        self.assertEqual(code, 0)
+        self.assertIn("[ ] Comprar pan  (media, 45m)", out)
+
+    def test_the_json_carries_the_details_without_touching_the_text(self):
+        self.add("Comprar pan", "--priority", "baja", "--estimate", "30m")
+
+        code, out, _ = self.run_cli("list", "--json", "--date", "2026-11-11")
+
+        entry = json.loads(out)["entries"][0]
+        self.assertEqual(code, 0)
+        self.assertEqual(entry["text"], "Comprar pan")
+        self.assertEqual(entry["priority"], 3)
+        self.assertEqual(entry["estimate_minutes"], 30)
+
+    def test_an_entry_without_details_keeps_the_old_line(self):
+        task_id = self.add("Sin nada")
+
+        code, out, _ = self.run_cli("list", "--date", "2026-11-11")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(out, f"{task_id} [ ] Sin nada\n")
+
+    def test_set_changes_and_clears_the_details(self):
+        task_id = self.add("Comprar pan")
+
+        code, _, err = self.run_cli("set", str(task_id), "--priority", "alta", "--estimate", "2h")
+        self.assertEqual(code, 0, err)
+        _, out, _ = self.run_cli("list", "--date", "2026-11-11")
+        self.assertIn("(alta, 2h)", out)
+
+        self.run_cli("set", str(task_id), "--estimate", "ninguna")
+        _, out, _ = self.run_cli("list", "--date", "2026-11-11")
+        self.assertIn("(alta)", out)
+        self.assertNotIn("2h", out)
+
+        self.run_cli("set", str(task_id), "--priority", "ninguna")
+        _, out, _ = self.run_cli("list", "--date", "2026-11-11")
+        self.assertNotIn("(", out)
+
+    def test_set_needs_something_to_change(self):
+        task_id = self.add("Comprar pan")
+
+        code, out, err = self.run_cli("set", str(task_id))
+
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("set necesita", err)
+
+    def test_a_value_outside_the_agreed_ones_is_refused_and_nothing_is_written(self):
+        code, _, err = self.run_cli(
+            "add", "Mala", "--date", "2026-11-11", "--priority", "urgente"
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("no es una prioridad válida", err)
+
+        code, _, err = self.run_cli(
+            "add", "Mala", "--date", "2026-11-11", "--estimate", "0"
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("mayor que cero", err)
+
+        _, out, _ = self.run_cli("list", "--date", "2026-11-11")
+        self.assertEqual(out, "")
+
+    def test_set_refuses_a_value_outside_the_agreed_ones(self):
+        task_id = self.add("Comprar pan", "--priority", "alta")
+
+        code, _, err = self.run_cli("set", str(task_id), "--priority", "cuando pueda")
+
+        self.assertEqual(code, 1)
+        self.assertIn("no es una prioridad válida", err)
+        _, out, _ = self.run_cli("list", "--date", "2026-11-11")
+        self.assertIn("(alta)", out)
+
+
 if __name__ == "__main__":
     unittest.main()

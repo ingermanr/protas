@@ -6,12 +6,65 @@ Nothing here touches the database. ``store`` builds these from rows and
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date as Date
 from datetime import datetime
 from typing import Optional
 
+from .text import normalize
+
 ISO_FORMAT = "%Y-%m-%d"
+
+PRIORITY_LABELS = {1: "alta", 2: "media", 3: "baja"}
+PRIORITY_VALUES = {label: value for value, label in PRIORITY_LABELS.items()}
+NO_PRIORITY = {"", "none", "ninguna", "sin", "sin prioridad"}
+_ESTIMATE_PATTERN = re.compile(r"^(?:(\d+(?:\.\d+)?)\s*h)?\s*(\d+)?\s*m?$")
+
+
+def parse_priority(text: str) -> Optional[int]:
+    """A priority as a person writes it: alta, media, baja or ninguna."""
+    key = " ".join(normalize(text).split())
+    if key in NO_PRIORITY:
+        return None
+    if key not in PRIORITY_VALUES:
+        raise ValueError(
+            f"'{text}' no es una prioridad válida, usa alta, media, baja o ninguna"
+        )
+    return PRIORITY_VALUES[key]
+
+
+def priority_label(value: Optional[int]) -> str:
+    """The word for a stored priority, or an empty string."""
+    return PRIORITY_LABELS.get(value, "")
+
+
+def parse_estimate(text: str) -> Optional[int]:
+    """Minutes from 30, 30m, 1h, 1h30 or 1.5h. None clears it."""
+    key = " ".join(normalize(text).split())
+    if key in NO_PRIORITY:
+        return None
+    match = _ESTIMATE_PATTERN.fullmatch(key)
+    hours = match.group(1) if match else None
+    minutes = match.group(2) if match else None
+    if not hours and not minutes:
+        raise ValueError(f"'{text}' no es una estimación válida, usa 30m, 1h o 1h30")
+    total = round(float(hours or 0) * 60) + int(minutes or 0)
+    if total <= 0:
+        raise ValueError("una estimación tiene que ser mayor que cero")
+    return total
+
+
+def format_estimate(minutes: Optional[int]) -> str:
+    """Minutes as a person reads them: 30m, 1h or 1h 30m."""
+    if not minutes:
+        return ""
+    hours, rest = divmod(minutes, 60)
+    if hours and rest:
+        return f"{hours}h {rest}m"
+    if hours:
+        return f"{hours}h"
+    return f"{rest}m"
 
 
 def today() -> str:
@@ -72,6 +125,8 @@ class Task:
     origin_id: Optional[int]
     position: int
     created_at: str
+    priority: Optional[int] = None
+    estimate: Optional[int] = None
     done_at: Optional[str] = None
     children: list["Task"] = field(default_factory=list)
 
@@ -79,6 +134,18 @@ class Task:
     def is_mention(self) -> bool:
         """True when the task is a day entry pointing at a project."""
         return self.project_id is not None
+
+    @property
+    def details(self) -> str:
+        """Priority and estimate as one line of text, or an empty string."""
+        parts = []
+        label = priority_label(self.priority)
+        if label:
+            parts.append(label)
+        estimate = format_estimate(self.estimate)
+        if estimate:
+            parts.append(estimate)
+        return ", ".join(parts)
 
 
 @dataclass

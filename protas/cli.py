@@ -16,6 +16,7 @@ from . import rules, text
 from . import __version__, db
 from .db import MigrationError
 from .store import Store, Task, Workspace, check_date, describe_event, today
+from .models import parse_estimate, parse_priority
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,6 +53,33 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="id of the parent task (a task of a day becomes a project)",
+    )
+    add.add_argument(
+        "--priority",
+        default=None,
+        metavar="ALTA|MEDIA|BAJA",
+        help="how important the task is",
+    )
+    add.add_argument(
+        "--estimate",
+        default=None,
+        metavar="30m|1h|1h30",
+        help="how long the task is expected to take",
+    )
+
+    details = sub.add_parser("set", help="set the priority or the estimate of an entry")
+    details.add_argument("id", type=int)
+    details.add_argument(
+        "--priority",
+        default=argparse.SUPPRESS,
+        metavar="ALTA|MEDIA|BAJA|NINGUNA",
+        help="new priority; 'ninguna' clears it",
+    )
+    details.add_argument(
+        "--estimate",
+        default=argparse.SUPPRESS,
+        metavar="30m|1h|1h30|NINGUNA",
+        help="new estimate in minutes; 'ninguna' clears it",
     )
 
     done = sub.add_parser("done", help="mark an entry as completed")
@@ -198,6 +226,9 @@ def render_entry(store: Store, task: Task, depth: int, reference_date: str | Non
     else:
         line += store.origin_label(task, reference_date)
 
+    if task.details:
+        line += f"  ({task.details})"
+
     lines = [line]
     for child in task.children:
         lines.extend(render_entry(store, child, depth + 1, reference_date))
@@ -275,7 +306,10 @@ def cmd_list(store: Store, args) -> int:
     workspace = _workspace_for(store, args)
     for node, depth in walk(store.tasks_of(workspace.id, include_done=args.all)):
         marker = "[x]" if store.is_done(node) else "[ ]"
-        print(f"{node.id} {marker} {'  ' * depth}{store.title_of(node)}")
+        line = f"{node.id} {marker} {'  ' * depth}{store.title_of(node)}"
+        if node.details:
+            line += f"  ({node.details})"
+        print(line)
     store.discard_if_empty(workspace.id)
     return 0
 
@@ -320,6 +354,8 @@ def list_payload(
                 "project_id": node.project_id,
                 "origin": store.origin_date(node),
                 "position": node.position,
+                "priority": node.priority,
+                "estimate_minutes": node.estimate,
                 "progress": (
                     store.project_state(node.project_id) if node.is_mention else None
                 ),
@@ -360,7 +396,28 @@ def cmd_add(store: Store, args) -> int:
             raise ValueError(f"project {args.project} does not exist")
     else:
         workspace = store.open_day(args.date)
-    task = store.add_task(args.text, workspace.id, parent_id=args.parent)
+    priority = parse_priority(args.priority) if args.priority is not None else None
+    estimate = parse_estimate(args.estimate) if args.estimate is not None else None
+    task = store.add_task(
+        args.text,
+        workspace.id,
+        parent_id=args.parent,
+        priority=priority,
+        estimate=estimate,
+    )
+    print(task.id)
+    return 0
+
+
+def cmd_set(store: Store, args) -> int:
+    changes = {}
+    if hasattr(args, "priority"):
+        changes["priority"] = parse_priority(args.priority)
+    if hasattr(args, "estimate"):
+        changes["estimate"] = parse_estimate(args.estimate)
+    if not changes:
+        raise ValueError("set necesita --priority, --estimate o los dos")
+    task = store.set_details(args.id, **changes)
     print(task.id)
     return 0
 
@@ -714,6 +771,7 @@ COMMANDS = {
     "show": cmd_show,
     "list": cmd_list,
     "add": cmd_add,
+    "set": cmd_set,
     "done": cmd_done,
     "undone": cmd_undone,
     "rm": cmd_rm,

@@ -53,6 +53,27 @@ from .text import matches as text_matches
 from .text import terms as text_terms
 
 
+_UNSET = object()
+
+
+def _check_priority(value: int | None) -> int | None:
+    """The stored form of a priority: None, or one of 1, 2, 3."""
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value in (1, 2, 3):
+        return value
+    raise ValueError(f"{value!r} no es una prioridad válida, usa 1, 2, 3 o ninguna")
+
+
+def _check_estimate(value: int | None) -> int | None:
+    """The stored form of an estimate: None, or a whole number of minutes."""
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    raise ValueError("una estimación tiene que ser un número de minutos mayor que cero")
+
+
 class Store:
     """All persistence for workspaces, tasks and projects."""
 
@@ -69,6 +90,21 @@ class Store:
         """
         self.conn = conn if conn is not None else connect(path, notify=notify)
         self.fts_enabled = fts5_available()
+        self._details: bool | None = None
+
+    def has_details(self) -> bool:
+        """True when this database carries priority and estimate.
+
+        A database built by an older release, as the tests of the update
+        chain do, lacks them; everything that reads or writes them asks
+        first, so those databases keep working exactly as before.
+        """
+        if self._details is None:
+            columns = {
+                row[1] for row in self.conn.execute("PRAGMA table_info(tasks)").fetchall()
+            }
+            self._details = {"priority", "estimate"} <= columns
+        return self._details
 
     # ------------------------------------------------------------------
     # workspaces
@@ -202,6 +238,7 @@ class Store:
     # tasks
     # ------------------------------------------------------------------
     def _to_task(self, row: sqlite3.Row) -> Task:
+        keys = row.keys()
         return Task(
             id=row["id"],
             workspace_id=row["workspace_id"],
@@ -212,6 +249,8 @@ class Store:
             origin_id=row["origin_id"],
             position=row["position"],
             created_at=row["created_at"],
+            priority=row["priority"] if "priority" in keys else None,
+            estimate=row["estimate"] if "estimate" in keys else None,
             done_at=row["done_at"],
         )
 
@@ -221,6 +260,8 @@ class Store:
         workspace_id: int,
         parent_id: int | None = None,
         day_id: int | None = None,
+        priority: int | None = None,
+        estimate: int | None = None,
     ) -> Task:
         """Create a task inside a workspace.
 
@@ -231,6 +272,10 @@ class Store:
         text = text.strip()
         if not text:
             raise ValueError("a task needs some text")
+        priority = _check_priority(priority)
+        estimate = _check_estimate(estimate)
+        if (priority is not None or estimate is not None) and not self.has_details():
+            raise ValueError("esta base de datos no guarda prioridad ni estimación")
         workspace = self.workspace(workspace_id)
         if workspace is None:
             raise ValueError(f"workspace {workspace_id} does not exist")
@@ -246,7 +291,11 @@ class Store:
                 # goes inside, so the rollover carries one entry.
                 project = self.promote(parent_id, day_id=workspace_id)
                 return self.add_task(
-                    text, project.id, day_id=day_id if day_id is not None else workspace_id
+                    text,
+                    project.id,
+                    day_id=day_id if day_id is not None else workspace_id,
+                    priority=priority,
+                    estimate=estimate,
                 )
 
         position = self._next_position(workspace_id, parent_id)
@@ -258,6 +307,11 @@ class Store:
             (workspace_id, parent_id, text, position, _now()),
         )
         new_id = cursor.lastrowid
+        if priority is not None or estimate is not None:
+            self.conn.execute(
+                "UPDATE tasks SET priority = ?, estimate = ? WHERE id = ?",
+                (priority, estimate, new_id),
+            )
         if workspace.is_project:
             # New work reopens a project that was completed while empty.
             self._write_mentions_done(workspace_id, False)
@@ -286,10 +340,48 @@ class Store:
             return None
         return self._to_task(row)
 
+    def set_details(
+        self,
+        task_id: int,
+        priority: int | None = _UNSET,  # type: ignore[assignment]
+        estimate: int | None = _UNSET,  # type: ignore[assignment]
+    ) -> Task:
+        """Change the priority, the estimate, or both, of an entry.
+
+        Only what the caller names moves; ``None`` clears one of them.
+        """
+        task = self.task(task_id)
+        if task is None:
+            raise ValueError(f"task {task_id} does not exist")
+        if not self.has_details():
+            raise ValueError("esta base de datos no guarda prioridad ni estimación")
+
+        changes = []
+        params: list[int | None] = []
+        if priority is not _UNSET:
+            changes.append("priority = ?")
+            params.append(_check_priority(priority))
+        if estimate is not _UNSET:
+            changes.append("estimate = ?")
+            params.append(_check_estimate(estimate))
+        if not changes:
+            return task
+
+        params.append(task_id)
+        self.conn.execute(f"UPDATE tasks SET {', '.join(changes)} WHERE id = ?", params)
+        self.conn.commit()
+        return self.task(task_id)
+
     def tasks_of(self, workspace_id: int, include_done: bool = True) -> list[Task]:
-        """Return the top level entries of a workspace with their children."""
+        """Return the top level entries of a workspace with their children.
+
+        Entries with a priority come first, from alta to baja, and the rest
+        keep the manual order. A database without the columns keeps that
+        manual order for everything.
+        """
+        order = "COALESCE(priority, 4), position, id" if self.has_details() else "position, id"
         rows = self.conn.execute(
-            "SELECT * FROM tasks WHERE workspace_id = ? ORDER BY position, id", (workspace_id,)
+            f"SELECT * FROM tasks WHERE workspace_id = ? ORDER BY {order}", (workspace_id,)
         ).fetchall()
 
         nodes = {row["id"]: self._to_task(row) for row in rows}
@@ -826,6 +918,11 @@ class Store:
                 _now(),
             ),
         )
+        if self.has_details():
+            self.conn.execute(
+                "UPDATE tasks SET priority = ?, estimate = ? WHERE id = ?",
+                (row["priority"], row["estimate"], cursor.lastrowid),
+            )
         self.conn.execute(
             "INSERT OR IGNORE INTO carries (origin_id, workspace_id, created_at) "
             "VALUES (?, ?, ?)",

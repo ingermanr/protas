@@ -30,10 +30,10 @@ because the user did not ask for it.
 
 ## Tasks
 
-- [ ] T1 (S1, S2): schema 5 adds `priority` and `estimate` to `tasks`, the
+- [x] T1 (S1, S2): commit `6918d2c`. Schema 5 adds `priority` and `estimate` to `tasks`, the
   4 to 5 step, and the version expectations of the existing tests. Route:
   inline. Risk: item 1 (schema migration), own commit.
-- [ ] T2 (S1, S3, S4): `Task` fields, parse and format helpers, `add_task`
+- [x] T2 (S1, S3, S4): commit `PENDING-T2`. `Task` fields, parse and format helpers, `add_task`
   options, a `set` method, ordering by priority and estimate; CLI `add
   --priority/--estimate`, `protas set`, list/show/JSON output. Route: inline.
 - [ ] T3 (S1, S5): TUI shows priority and estimate, `!` cycles the priority and
@@ -61,3 +61,20 @@ because the user did not ask for it.
   orders by `COALESCE(priority, 4), position, id`, so a database with no
   priorities keeps its manual order. The estimate lives on the entry, so the
   rollover copies it with the text; the statistics show it per day.
+- L5 (2026-11-12): T1 done in `6918d2c`; 302 tests green. The version 4 to 5
+  step adds both columns with CHECKs; a new database gets them after the
+  baseline shape. `SCHEMA_V3` stays frozen, `SCHEMA_V4` is the frozen
+  version 4 the tests pin, and `tests/support.py` gained
+  `at_version_4`/`pin_version_4`.
+- L6 (2026-11-12): T2 done in `PENDING-T2`; 326 tests green. `store.has_details`
+  reads the columns and everything that touches them asks first, so the
+  pinned old schemas of the update chain keep working. The details are written
+  with a second UPDATE after the INSERT, so the pinned v3/v4 schemas and their
+  tests never see the new columns. CLI: `add --priority/--estimate` and
+  `protas set ID --priority/--estimate` (no flags is an error), text and JSON
+  output gained the details; JSON adds `priority` and `estimate_minutes`.
+  Difference against `6918d2c` on a database without details: identical `list`,
+  `show`, `projects`, `history` and `stats` text, plus the two new JSON keys
+  only. Tests were written after the implementation, so no RED was observed
+  for this task; the differential check against the base commit was run
+  instead.
