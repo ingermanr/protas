@@ -34,7 +34,7 @@ because the user did not ask for it.
   4 to 5 step, and the version expectations of the existing tests. Route:
   inline. Risk: item 1 (schema migration), own commit.
 - [x] T2 (S1, S3, S4): commit `da02213`. `Task` fields, parse and format helpers, `add_task`
-  options, a `set` method, ordering by priority and estimate; CLI `add
+  options, a `set` method, ordering by priority (then manual position); CLI `add
   --priority/--estimate`, `protas set`, list/show/JSON output. Route: inline.
 - [x] T3 (S1, S5): commit `f6f467f`. TUI shows priority and estimate, `!` cycles the priority and
   `E` edits the estimate; help updated. Route: inline.
@@ -42,8 +42,9 @@ because the user did not ask for it.
   Route: inline.
 - [x] T5 (S5): commit `1d9bf3b`. README documents the new options, command and keys. Route:
   inline.
-- [ ] T6 (S2): independent verification of the whole feature before merge.
-  Route: delegated (Verification trigger, item 1).
+- [x] T6 (S2): independent verification of the whole feature before merge.
+  Route: delegated (Verification trigger, item 1). Verdict: S1-S5 PASS, no
+  blockers (see L10).
 
 ## Log
 
@@ -95,3 +96,15 @@ because the user did not ask for it.
   ordering and the clear-with-`ninguna`, the statistics sample shows the
   estimate of the day, and the data model says the columns are optional and
   that the rollover copies them.
+- L10 (2026-11-13): T6 done. Independent verifier at `5435099` against
+  baseline `15e2095`: S1-S5 PASS, no blockers, 336 tests green (parent spot
+  check re-ran the suite: OK). Migration 4 to 5 preserved every row, wrote
+  `<db>.v4.bak` with an equal dump, and was idempotent; 35 baseline/branch
+  commands were byte-identical apart from the requested JSON keys and new
+  options; rejected commands left the data hash unchanged. Advisories, not
+  fixed: (1) `cmd_stats` computes stats before `open_day`, so the first
+  `stats` of a day lacks today's estimate (ordering predates the branch);
+  (2) empty `--priority ''`/`--estimate ''` count as none and
+  `--estimate "sin prioridad"` clears; (3) TUI selection stays on the index,
+  not the task, after `!` re-sorts; (4) JSON always carries the new keys.
+  T2 wording corrected: ordering is by priority, then manual position.
