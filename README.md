@@ -80,6 +80,7 @@ Al abrir el día, las tareas pendientes del día anterior ya vienen cargadas.
 | `enter` | abrir el proyecto de una mención |
 | `h` | ver la historia del proyecto |
 | `s` | ver los números |
+| `R` | ver, crear y borrar las tareas recurrentes |
 | `esc` | volver del proyecto al día |
 | `←` / `→` | moverse entre días |
 | `r` | actualizar el día (trae lo pendiente si es hoy) |
@@ -177,8 +178,11 @@ Los días de la semana se escriben en español o en inglés (`lun,jue` o
 - Si la borras, no vuelve ese día.
 - Quitar una regla deja intactas las tareas que ya creó.
 
-En la TUI se ven y se marcan como cualquier otra tarea; las reglas se
-gestionan con `protas recur`.
+En la TUI se ven y se marcan como cualquier otra tarea. `R` abre la lista
+de reglas: `j`/`k` mueven, `a` pide el texto y después la frecuencia (`day`,
+`lun,jue` o `15`), `x` borra la regla seleccionada tras confirmar, y `R` o
+`esc` vuelven al día. Si la regla nueva toca hoy y estás viendo hoy, su tarea
+aparece de inmediato.
 
 ### Exportar a Obsidian
 
@@ -423,7 +427,6 @@ código está en `protas/integrations/omarchy/german-ds.protas/`.
 
 ## Roadmap
 
-- Crear y quitar tareas recurrentes desde la TUI.
 - Validar que el README y las instrucciones de uso sirvan a cualquiera que
   clone o descargue el repositorio, con un aviso claro de que el panel de
   Omarchy no está disponible en Windows ni en iOS.

@@ -15,6 +15,7 @@ from datetime import date as Date
 from datetime import timedelta
 from typing import Optional
 
+from . import rules
 from . import text as text_tools
 from .models import Hit, format_estimate, parse_estimate, priority_label
 from .store import Store, Task, Workspace, check_date, describe_event, today
@@ -22,7 +23,7 @@ from .store import Store, Task, Workspace, check_date, describe_event, today
 HELP = (
     "? ayuda | j/k mover | espacio completar | a tarea | A subtarea | p proyecto | "
     "e editar | ! prioridad | E estimacion | n nota | x borrar | / buscar | "
-    "enter abrir | esc volver | ←/→ dia | h historia | s numeros | q salir | "
+    "enter abrir | esc volver | ←/→ dia | h historia | s numeros | R recurrentes | q salir | "
     "r actualizar | g/G inicio/fin"
 )
 
@@ -39,8 +40,7 @@ KEYS = (
     ("x", "borrar la entrada"),
     ("n", "editar la nota"),
     ("/", "buscar en tareas, notas, dias y proyectos"),
-    ("h", "ver la historia del proyecto"),
-    ("s", "ver los numeros"),
+    ("h / s / R", "ver la historia, los numeros o las recurrentes"),
     ("r", "actualizar el dia"),
     ("←  / →", "moverse entre dias"),
     ("esc", "volver al dia o cerrar esta pantalla"),
@@ -56,6 +56,10 @@ def _help_lines() -> list[str]:
 
 SEARCH_HELP = "j/k mover | enter abrir | / buscar otra vez | esc volver | q salir"
 
+RECUR_HELP = "j/k mover | a nueva | x borrar | R o esc volver | q salir"
+
+RECUR_EVERY_PROMPT = "Cada (day, lun,jue o 15): "
+
 HIT_LABELS = {"task": "tarea", "note": "nota", "day": "dia", "project": "proyecto"}
 
 
@@ -66,6 +70,14 @@ class Search:
         self.term = term
         self.hits = hits
         self.selection = 0
+
+
+def _recurrence_lines(store: Store) -> list[str]:
+    """One line per rule: its number, when it fires and its text."""
+    return [
+        f" {rule.id:>3}  {rules.describe_recurrence(rule.pattern):<20}  {rule.text}"
+        for rule in store.recurrences()
+    ]
 
 
 def _search_lines(hits: list[Hit], term: str) -> list[str]:
@@ -205,6 +217,7 @@ def _draw(
     editor: Optional[Editor],
     view: str = "tasks",
     search: Optional[Search] = None,
+    recur_selection: int = 0,
 ) -> None:
     stdscr.erase()
     height, width = stdscr.getmaxyx()
@@ -228,7 +241,7 @@ def _draw(
         stdscr.hline(2, 0, "-", max(width - 1, 0))
 
     body_top = 3
-    footer = message or (SEARCH_HELP if view == "search" else HELP)
+    footer = message or {"search": SEARCH_HELP, "recur": RECUR_HELP}.get(view, HELP)
     # The footer wraps instead of being cut: on a narrow window the keys
     # that do not fit on the first line keep their own lines, and the body
     # shrinks to make room for them.
@@ -263,6 +276,29 @@ def _draw(
         lines = _search_lines(search.hits, search.term)
         for index, line in enumerate(lines[offset : offset + room]):
             attribute = curses.A_REVERSE if index + offset == search.selection else curses.A_NORMAL
+            try:
+                stdscr.addstr(
+                    body_top + 2 + index,
+                    0,
+                    _clip(line.ljust(max(width - 1, 0)), width),
+                    attribute,
+                )
+            except curses.error:
+                pass
+    elif visible and view == "recur":
+        lines = _recurrence_lines(store)
+        title = f" Recurrentes ({len(lines)})"
+        try:
+            stdscr.addstr(body_top, 0, _clip(title.ljust(max(width - 1, 0)), width), curses.A_BOLD)
+        except curses.error:
+            pass
+        if not lines:
+            lines = [" no hay tareas recurrentes"]
+            recur_selection = -1
+        room = max(visible - 2, 0)
+        offset = max(recur_selection - room + 1, 0)
+        for index, line in enumerate(lines[offset : offset + room]):
+            attribute = curses.A_REVERSE if index + offset == recur_selection else curses.A_NORMAL
             try:
                 stdscr.addstr(
                     body_top + 2 + index,
@@ -524,6 +560,9 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
     editor: Optional[Editor] = None
     view = "tasks"
     search: Optional[Search] = None
+    recur_selection = 0
+    # The text of a new rule waits here while its frequency is asked.
+    recur_text = ""
 
     while True:
         # The workspace is refreshed every turn: the note and the title can
@@ -538,7 +577,13 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
         if selection < 0:
             selection = 0
 
-        _draw(stdscr, store, workspace, rows, selection, message, editor, view, search)
+        recurrences = store.recurrences() if view == "recur" else []
+        recur_selection = min(recur_selection, max(len(recurrences) - 1, 0))
+
+        _draw(
+            stdscr, store, workspace, rows, selection, message, editor, view, search,
+            recur_selection,
+        )
         key = _read_key(stdscr)
         if key is None:
             continue
@@ -560,6 +605,27 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                             message = ""
                         elif term:
                             message = f"sin resultados para «{term}»"
+                    elif editor.kind == "recur_text":
+                        recur_text = editor.text()
+                        if not recur_text:
+                            raise ValueError("una tarea recurrente necesita un texto")
+                        editor = Editor(RECUR_EVERY_PROMPT, "recur_every")
+                        message = ""
+                        continue
+                    elif editor.kind == "recur_every":
+                        rule = store.add_recurrence(recur_text, editor.text())
+                        # A rule that fires today makes its task now, as
+                        # opening the day would.
+                        if current_day.date == today():
+                            store.spawn_recurring(current_day.date)
+                        recurrences = store.recurrences()
+                        recur_selection = next(
+                            (i for i, r in enumerate(recurrences) if r.id == rule.id), 0
+                        )
+                        message = f"recurrente {rule.id}: {rules.describe_recurrence(rule.pattern)}"
+                    elif editor.kind == "recur_delete":
+                        store.remove_recurrence(editor.target_id)
+                        message = "recurrente borrada"
                     elif editor.kind == "delete":
                         store.delete_task(editor.target_id)
                         message = "entrada borrada"
@@ -597,6 +663,37 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
             continue
 
         ch = _command_code(key)
+        if view == "recur":
+            # The rules take the keys: moving, adding, removing and leaving.
+            last = max(len(recurrences) - 1, 0)
+            if ch == ord("q"):
+                store.discard_if_empty(current_day.id)
+                return
+            elif ch in (ord("j"), curses.KEY_DOWN):
+                recur_selection = min(recur_selection + 1, last)
+            elif ch in (ord("k"), curses.KEY_UP):
+                recur_selection = max(recur_selection - 1, 0)
+            elif ch == ord("g"):
+                recur_selection = 0
+            elif ch == ord("G"):
+                recur_selection = last
+            elif ch == ord("a"):
+                editor = Editor("Recurrente: ", "recur_text")
+            elif ch == ord("x"):
+                if recurrences:
+                    rule = recurrences[recur_selection]
+                    editor = Editor(
+                        f"Borrar la recurrente '{rule.text}'? (Enter si, Esc no): ",
+                        "recur_delete",
+                        target_id=rule.id,
+                    )
+                else:
+                    message = "no hay ninguna recurrente que borrar"
+            elif ch in (ord("R"), 27):
+                view = "tasks"
+                message = ""
+            continue
+
         if view == "search" and search is not None:
             # The results take the keys: only moving, opening and leaving.
             last = len(search.hits) - 1
@@ -746,6 +843,10 @@ def _run(stdscr, store: Store, date_str: str | None, project_id: int | None) -> 
                 message = "el historial es de los proyectos"
         elif ch == ord("s"):
             view = "tasks" if view == "stats" else "stats"
+        elif ch == ord("R"):
+            view = "recur"
+            recur_selection = 0
+            message = ""
         elif ch == ord("?"):
             view = "tasks" if view == "help" else "help"
         elif ch == 27:

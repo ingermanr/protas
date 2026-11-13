@@ -186,7 +186,7 @@ class TuiSmokeTest(unittest.TestCase):
         lines = _help_lines()
         text = "\n".join(lines)
         for key in ("j / k", "g / G", "espacio", "enter", "a", "A", "p", "e / ! / E", "x", "n",
-                    "h", "s", "r", "←  / →", "esc", "?", "q"):
+                    "h / s / R", "r", "←  / →", "esc", "?", "q"):
             self.assertTrue(
                 any(line.strip().startswith(key + "  ") for line in lines), f"{key!r} in\n{text}"
             )
@@ -464,6 +464,7 @@ class TuiSmokeTest(unittest.TestCase):
                 self.assertIn("Prioridad", lines[1])
             finally:
                 store.close()
+
 
 
 if __name__ == "__main__":
@@ -763,3 +764,100 @@ class TuiDetailsTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("45m", screens[0])
         self.assertEqual(self.read(task_id).estimate, 45)
+
+
+class TuiRecurringTest(unittest.TestCase):
+    """The recurring rules from the TUI: R lists them, a adds, x removes."""
+
+    def setUp(self):
+        sys.path.insert(0, str(REPO_ROOT))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = str(Path(self.tmp.name) / "protas.db")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    drive = TuiDetailsTest.drive
+
+    def store(self):
+        from protas.store import Store
+
+        return Store(path=self.db)
+
+    def add_rule(self, text, every):
+        store = self.store()
+        try:
+            return store.add_recurrence(text, every).id
+        finally:
+            store.close()
+
+    def rules(self):
+        store = self.store()
+        try:
+            return [(rule.text, rule.pattern) for rule in store.recurrences()]
+        finally:
+            store.close()
+
+    def today_texts(self):
+        store = self.store()
+        try:
+            day = store.open_day()
+            return [task.text for task in store.tasks_of(day.id)]
+        finally:
+            store.close()
+
+    def test_shift_r_lists_the_rules_and_goes_back(self):
+        self.add_rule("Regar las plantas", "lun,jue")
+
+        code, screens = self.drive([b"R", b"R"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Recurrentes", screens[0])
+        self.assertIn("Regar las plantas", screens[0])
+        self.assertIn("lunes y jueves", screens[0])
+        self.assertNotIn("Recurrentes", screens[1])
+
+    def test_without_rules_the_view_says_so(self):
+        code, screens = self.drive([b"R"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("no hay tareas recurrentes", screens[0])
+
+    def test_a_asks_the_text_then_the_frequency(self):
+        code, screens = self.drive([b"R", b"a", b"Pagar el alquiler\r", b"5\r"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Cada", screens[2])
+        self.assertEqual(self.rules(), [("Pagar el alquiler", "monthly:5")])
+        self.assertIn("Pagar el alquiler", screens[3])
+
+    def test_a_frequency_that_is_not_one_is_refused(self):
+        code, screens = self.drive([b"R", b"a", b"Algo\r", b"nunca\r"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("no entiendo", screens[3])
+        self.assertEqual(self.rules(), [])
+
+    def test_a_rule_that_fires_today_puts_its_task_in_today(self):
+        code, _ = self.drive([b"R", b"a", b"Leer un rato\r", b"day\r"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self.rules(), [("Leer un rato", "daily")])
+        self.assertEqual(self.today_texts().count("Leer un rato"), 1)
+
+    def test_x_removes_the_rule_and_keeps_the_tasks_it_made(self):
+        self.add_rule("Revisar el correo", "day")
+        self.assertIn("Revisar el correo", self.today_texts())
+
+        code, screens = self.drive([b"R", b"x", b"\r"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("Borrar", screens[1])
+        self.assertEqual(self.rules(), [])
+        self.assertIn("Revisar el correo", self.today_texts())
+
+    def test_the_help_names_the_recurring_key(self):
+        from protas.tui import HELP, _help_lines
+
+        self.assertIn("R recurrentes", HELP)
+        self.assertLessEqual(len(_help_lines()), 20)
