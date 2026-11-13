@@ -704,11 +704,16 @@ class Store:
         for rule in self.recurrences():
             if not rules.recurrence_fires(rule.pattern, when):
                 continue
-            settled = self.conn.execute(
-                "SELECT 1 FROM recurrence_tasks WHERE recurrence_id = ? AND date = ?",
+            # The day is claimed in the ledger before the task exists. The
+            # ledger takes one row per rule and day, so when two protas
+            # open the day at once only one of them gets to make the task.
+            claim = self.conn.execute(
+                "INSERT OR IGNORE INTO recurrence_tasks (recurrence_id, date, task_id) "
+                "VALUES (?, ?, NULL)",
                 (rule.id, date_str),
-            ).fetchone()
-            if settled is not None:
+            )
+            self.conn.commit()
+            if claim.rowcount == 0:
                 continue
 
             task_id = self._recurrence_task_in(rule.id, day.id)
@@ -716,11 +721,10 @@ class Store:
                 task_id = self.add_task(rule.text, day.id).id
                 spawned.append(task_id)
             self.conn.execute(
-                "INSERT OR IGNORE INTO recurrence_tasks (recurrence_id, date, task_id) "
-                "VALUES (?, ?, ?)",
-                (rule.id, date_str, task_id),
+                "UPDATE recurrence_tasks SET task_id = ? WHERE recurrence_id = ? AND date = ?",
+                (task_id, rule.id, date_str),
             )
-        self.conn.commit()
+            self.conn.commit()
         return spawned
 
     def _recurrence_task_in(self, recurrence_id: int, workspace_id: int) -> int | None:

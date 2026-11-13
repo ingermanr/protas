@@ -122,7 +122,7 @@ def parse_recurrence(spec: str) -> str:
     if cleaned in _DAILY_WORDS:
         return "daily"
 
-    if cleaned.isdigit():
+    if cleaned.isascii() and cleaned.isdigit():
         if 1 <= int(cleaned) <= 31:
             return f"monthly:{int(cleaned)}"
     else:

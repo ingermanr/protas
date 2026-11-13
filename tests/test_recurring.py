@@ -27,7 +27,7 @@ class PatternTest(unittest.TestCase):
         self.assertEqual(rules.parse_recurrence("15"), "monthly:15")
 
     def test_anything_else_is_refused(self):
-        for spec in ("", "cada 3 dias", "0", "32", "lun,xyz", "3d"):
+        for spec in ("", "cada 3 dias", "0", "32", "lun,xyz", "3d", "\u00b2", "\u0663"):
             with self.assertRaises(ValueError, msg=spec):
                 rules.parse_recurrence(spec)
 
@@ -151,6 +151,22 @@ class SpawnTest(RecurringCase):
 
         self.store.open_day()
         self.assertEqual(self.texts(today()), ["Regar las plantas"])
+
+    def test_two_protas_opening_the_day_at_once_spawn_one_task(self):
+        self.store.add_recurrence("Regar las plantas", "day")
+        other = Store(path=self.db)
+        self.addCleanup(other.close)
+        add_task = self.store.add_task
+
+        def add_while_the_other_opens(*args, **kwargs):
+            # The other protas reaches the same rule in the middle of this one.
+            other.spawn_recurring(MONDAY)
+            return add_task(*args, **kwargs)
+
+        self.store.add_task = add_while_the_other_opens
+        self.store.spawn_recurring(MONDAY)
+
+        self.assertEqual(self.texts(MONDAY), ["Regar las plantas"])
 
     def test_two_rules_each_get_their_task(self):
         self.store.add_recurrence("Regar las plantas", "day")
