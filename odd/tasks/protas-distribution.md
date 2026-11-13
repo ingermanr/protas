@@ -38,9 +38,10 @@ user authorizes push, merge, release and the OPR PR. Test runner:
 - [x] T2 (S5): portable panel and new plugin id with cleanup of the old one.
   Route: inline. Risk: item 3 (renames the plugin id an installed panel uses).
   Commit: see L5.
-- [ ] T3 (S3, S6): Arch package, desktop entry and icon, local build and
+- [x] T3 (S3, S6): Arch package, desktop entry and icon, local build and
   install; release and OPR steps documented. Route: inline. Risk: item 5
-  (packaging and delivery).
+  (packaging and delivery). Commit: see L6. `pacman -U` pending: needs the
+  user's sudo.
 
 ## Log
 
@@ -82,3 +83,20 @@ user authorizes push, merge, release and the OPR PR. Test runner:
   run and the install still succeeds. RED observed for the four new tests;
   355 tests green; the real `omarchy plugin validate` accepts the panel.
   README panel section updated.
+- L6 (2026-11-13): T3. `packaging/PKGBUILD` (arch any, depends python,
+  wheel built with python-build and installed with python-installer, check()
+  runs the suite) builds from the GitHub tag tarball with a zero checksum to
+  fill by `updpkgsums` after the release; `packaging/protas.desktop`
+  (Terminal=true, passes `desktop-file-validate`) and `assets/logo.svg` as
+  the hicolor icon. Deviation from S6: the panel is not copied to
+  `/usr/share/protas/`; it already ships inside the Python package and
+  `protas omarchy install` reads it from there. Local check: `makepkg -d`
+  in a scratch dir with the build tools on PYTHONPATH (no sudo here), from
+  a `git archive` of HEAD: 355 tests green inside check(), the package holds
+  `/usr/bin/protas`, site-packages, the desktop entry, icon and license, and
+  the packaged `protas` runs `version`, `add` and `list`. The first build
+  showed `build/` committed by mistake in `7494c47` (from `uv tool install .`
+  in the repo); `d6ea2d8` untracks it and ignores `build/` and `dist/`.
+  `packaging/README.md` gives the release, local `makepkg -si` and
+  omarchy-pkgs PR steps; the README links it and the Roadmap now lists only
+  the OPR publication.

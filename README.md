@@ -96,6 +96,14 @@ eso se usa `uv` o `pipx`. Para instalar `pipx` ahí:
 La instalación copia el código: después puedes borrar la carpeta del
 repositorio y `protas` sigue funcionando.
 
+### Como paquete en Arch y Omarchy
+
+En Arch u Omarchy también se puede instalar como paquete del sistema, con
+su entrada en el lanzador (`Super + Space` en Omarchy) y su ícono. La
+receta y cómo compilarla están en [packaging/README.md](packaging/README.md).
+Cuando esté publicado en el repositorio de paquetes de Omarchy bastará con
+`omarchy pkg add protas`; todavía no lo está.
+
 ### Actualizar y desinstalar
 
 ```bash
@@ -506,9 +514,8 @@ del widget. Su código está en
 
 ## Roadmap
 
-- Validar que el README y las instrucciones de uso sirvan a cualquiera que
-  clone o descargue el repositorio, con un aviso claro de que el panel de
-  Omarchy no está disponible en Windows ni en iOS.
+- Publicar protas en el repositorio de paquetes de Omarchy
+  (`omarchy pkg add protas`).
 
 ## Licencia
 
