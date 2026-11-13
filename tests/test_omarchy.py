@@ -1,9 +1,11 @@
 """Behaviour tests for installing the Omarchy panel."""
 
 import contextlib
+import errno
 import io
 import json
 import os
+import shutil
 import stat
 import tempfile
 import unittest
@@ -126,9 +128,10 @@ class OmarchyInstallTest(unittest.TestCase):
         self.provide_omarchy()
         self.env["FAKE_OMARCHY_BUSY_ONCE"] = "plugin enable"
 
-        code, _, _ = self.run_cli("install")
+        code, _, err = self.run_cli("install")
 
         self.assertEqual(code, 0)
+        self.assertIn("reintento", err)
         enable = f"plugin enable {omarchy.PLUGIN_ID}"
         self.assertEqual(self.calls().count(enable), 2)
         self.assertEqual(self.calls()[-1], "restart shell")
@@ -191,6 +194,71 @@ class OmarchyInstallTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("protas:", err)
         self.assertEqual(self.calls(), [])
+
+    def test_a_plugins_folder_on_another_disk_still_gets_the_panel(self):
+        self.provide_omarchy()
+        self.target.mkdir(parents=True)
+        (self.target / "Panel.qml").write_text("old panel")
+        across = OSError(errno.EXDEV, "Invalid cross-device link")
+
+        with mock.patch("os.rename", side_effect=across):
+            code, _, _ = self.run_cli("install")
+
+        self.assertEqual(code, 0)
+        self.assertNotEqual((self.target / "Panel.qml").read_text(), "old panel")
+        self.assertTrue((self.target / "manifest.json").is_file())
+
+    def test_a_config_folder_that_takes_no_new_entries_still_gets_the_panel(self):
+        self.provide_omarchy()
+        self.target.parent.mkdir(parents=True)
+        (self.target.parent / "another.plugin").mkdir()
+        locked = self.target.parent.parent
+        locked.chmod(0o555)
+        try:
+            code, _, _ = self.run_cli("install")
+        finally:
+            locked.chmod(0o755)
+
+        self.assertEqual(code, 0)
+        self.assertTrue((self.target / "Panel.qml").is_file())
+        self.assertEqual([path.name for path in locked.iterdir()], ["plugins"])
+
+    def test_a_previous_panel_that_cannot_be_put_back_is_not_thrown_away(self):
+        self.provide_omarchy()
+        self.target.mkdir(parents=True)
+        (self.target / "Panel.qml").write_text("old panel")
+        real_move = shutil.move
+        moves = []
+
+        def move(source, destination):
+            moves.append(source)
+            if len(moves) > 1:
+                raise OSError(errno.EIO, "Input/output error")
+            return real_move(source, destination)
+
+        with mock.patch.object(omarchy.shutil, "move", side_effect=move):
+            code, _, err = self.run_cli("install")
+
+        self.assertEqual(code, 1)
+        kept = [word for word in err.split() if "protas-panel-" in word]
+        self.assertEqual(len(kept), 1, err)
+        saved = Path(kept[0].rstrip(".,;:"))
+        self.addCleanup(shutil.rmtree, saved.parent, True)
+        self.assertEqual((saved / "Panel.qml").read_text(), "old panel")
+
+    def test_an_omarchy_that_cannot_be_run_is_named_as_the_cause(self):
+        script = self.bin / "omarchy"
+        script.write_text("#!/nonexistent/interpreter\n")
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+        self.target.mkdir(parents=True)
+        (self.target / "Panel.qml").write_text("old panel")
+
+        code, _, err = self.run_cli("install")
+
+        self.assertEqual(code, 1)
+        self.assertIn("omarchy plugin validate", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual((self.target / "Panel.qml").read_text(), "old panel")
 
     def test_a_step_that_hangs_is_given_up(self):
         self.provide_omarchy()

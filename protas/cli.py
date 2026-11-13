@@ -213,7 +213,10 @@ def cmd_omarchy(args) -> int:
     from . import omarchy
 
     try:
-        report = omarchy.install(restart=not args.no_restart)
+        report = omarchy.install(
+            restart=not args.no_restart,
+            notify=lambda message: print(f"protas: {message}", file=sys.stderr),
+        )
     except omarchy.OmarchyError as error:
         print(f"protas: {error}", file=sys.stderr)
         return 1

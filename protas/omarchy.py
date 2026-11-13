@@ -15,6 +15,7 @@ import tempfile
 import time
 from importlib import resources
 from pathlib import Path
+from typing import Callable, Optional
 
 PLUGIN_ID = "german-ds.protas"
 
@@ -37,8 +38,14 @@ def plugins_dir() -> Path:
     return Path(config) / "omarchy" / "plugins"
 
 
-def install(restart: bool = True) -> list[str]:
-    """Install or update the panel and return the lines that report it."""
+def install(
+    restart: bool = True, notify: Optional[Callable[[str], None]] = None
+) -> list[str]:
+    """Install or update the panel and return the lines that report it.
+
+    ``notify`` receives what is worth saying while the install is still
+    running, such as the wait for a bar that is busy.
+    """
     omarchy = shutil.which("omarchy")
     if omarchy is None:
         raise OmarchyError(
@@ -49,11 +56,11 @@ def install(restart: bool = True) -> list[str]:
     try:
         _replace_plugin(omarchy, target)
     except OSError as error:
-        raise OmarchyError(f"no pude escribir el panel en {target}: {error}") from error
+        raise OmarchyError(f"no pude instalar el panel en {target}: {error}") from error
 
     # A folder that just appeared is unknown to the bar until it rescans.
-    _ask_bar(omarchy, "shell", "shell", "rescanPlugins")
-    _ask_bar(omarchy, "plugin", "enable", PLUGIN_ID)
+    _ask_bar(omarchy, notify, "shell", "shell", "rescanPlugins")
+    _ask_bar(omarchy, notify, "plugin", "enable", PLUGIN_ID)
 
     report = [f"Panel instalado en {target}"]
     if restart:
@@ -67,18 +74,17 @@ def install(restart: bool = True) -> list[str]:
 def _replace_plugin(omarchy: str, target: Path) -> None:
     """Put the panel this protas ships where Omarchy reads it.
 
-    The new copy is written and validated beside the plugins folder, and
-    only then takes the place of the installed one, so a copy that cannot
-    be written or does not validate leaves the previous panel untouched.
+    The new copy is written and validated in a folder of its own, and only
+    then takes the place of the installed one, so a copy that cannot be
+    written or does not validate leaves the previous panel untouched.
     """
     source = resources.files("protas") / "integrations" / "omarchy" / PLUGIN_ID
     if not source.is_dir():
         raise OmarchyError("esta instalación de protas no trae el panel de Omarchy")
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    # Outside the plugins folder, so the bar never sees a half-written
-    # plugin, and on the same filesystem, so the swap is a rename.
-    staging = Path(tempfile.mkdtemp(prefix=".protas-panel-", dir=target.parent.parent))
+    staging = _staging_dir(target)
+    keep_staging = False
     try:
         fresh = staging / PLUGIN_ID
         fresh.mkdir()
@@ -88,21 +94,49 @@ def _replace_plugin(omarchy: str, target: Path) -> None:
 
         _run(omarchy, "plugin", "validate", str(fresh))
 
+        # ``shutil.move`` renames when it can and copies when the plugins
+        # folder lives on another disk, where a rename is not possible.
         previous = staging / "previous"
         replaced = os.path.lexists(target)
         if replaced:
-            target.rename(previous)
+            shutil.move(str(target), str(previous))
         try:
-            fresh.rename(target)
-        except OSError:
+            shutil.move(str(fresh), str(target))
+        except OSError as error:
             if replaced:
-                previous.rename(target)
+                try:
+                    # A copy cut short leaves a partial folder in the way.
+                    shutil.rmtree(target, ignore_errors=True)
+                    shutil.move(str(previous), str(target))
+                except OSError:
+                    keep_staging = True
+                    raise OmarchyError(
+                        f"no pude instalar el panel ({error}) ni devolver el anterior"
+                        f" a su lugar; el panel anterior quedó en {previous}"
+                    ) from error
             raise
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        if not keep_staging:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
-def _ask_bar(omarchy: str, *args: str) -> None:
+def _staging_dir(target: Path) -> Path:
+    """A private folder to prepare the panel in.
+
+    Beside the plugins folder when possible: outside it, so the bar never
+    sees a half-written plugin, and usually on the same disk, so the swap
+    is a rename. When that place takes no new entries, the system's
+    temporary folder does the job.
+    """
+    try:
+        return Path(tempfile.mkdtemp(prefix=".protas-panel-", dir=target.parent.parent))
+    except OSError:
+        return Path(tempfile.mkdtemp(prefix=".protas-panel-"))
+
+
+def _ask_bar(
+    omarchy: str, notify: Optional[Callable[[str], None]], *args: str
+) -> None:
     """Run a step the running bar has to answer, waiting while it is busy.
 
     Both steps are safe to repeat: a rescan changes nothing by itself and
@@ -115,6 +149,8 @@ def _ask_bar(omarchy: str, *args: str) -> None:
         except OmarchyError:
             if attempt == BAR_ATTEMPTS:
                 raise
+            if attempt == 1 and notify is not None:
+                notify("la barra de Omarchy no respondió, reintento…")
             time.sleep(BAR_RETRY_PAUSE)
 
 
@@ -126,6 +162,8 @@ def _run(omarchy: str, *args: str) -> None:
         )
     except subprocess.TimeoutExpired as error:
         raise OmarchyError(f"«{step}» no respondió en {STEP_TIMEOUT:g} s") from error
+    except OSError as error:
+        raise OmarchyError(f"no pude ejecutar «{step}»: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise OmarchyError(f"falló «{step}»: {detail}" if detail else f"falló «{step}»")
