@@ -15,3 +15,6 @@ packaging/src/
 packaging/pkg/
 packaging/*.tar.gz
 packaging/*.pkg.tar.zst
+
+# Internal work logbook, kept only on the maintainer machine
+odd/
