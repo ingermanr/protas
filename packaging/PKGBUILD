@@ -5,7 +5,7 @@
 # the release exists to fill the checksum.
 
 pkgname=protas
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Daily notes and tasks in the terminal: one workspace per day, pending work rolls forward'
 arch=('any')

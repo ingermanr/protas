@@ -1,6 +1,6 @@
 [project]
 name = "protas"
-version = "0.1.0"
+version = "0.2.0"
 description = "Daily notes and tasks: one workspace per day, pending work rolls forward"
 readme = "README.md"
 license = {text = "MIT"}
