@@ -1,14 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="title">
   <title id="title">protas</title>
-  <!-- A note page holding a checked entry with its indented tasks:
-       the note and the project, the two halves of the name. -->
-  <rect width="256" height="256" rx="56" fill="#1f7a6d"/>
-  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke-width="14" d="M74 46h80l42 42v108a14 14 0 0 1-14 14H74a14 14 0 0 1-14-14V60a14 14 0 0 1 14-14z"/>
-    <path stroke-width="14" d="M154 46v42h42"/>
-    <path stroke-width="13" d="M84 122l11 11 20-22"/>
-    <path stroke-width="13" d="M134 122h36"/>
-    <path stroke-width="13" d="M112 152h58"/>
-    <path stroke-width="13" d="M112 180h36"/>
-  </g>
+  <!-- A terminal-style frame holding three task rows, drawn on the 24 grid
+       with one square-capped stroke, in the Omarchy idiom. -->
+  <rect width="24" height="24" fill="#1a1b26"/>
+  <path d="M21 21H3V3h18zM7 8h1M11 8h6M7 12h1M11 12h6M7 16h1M11 16h3" fill="none" stroke="#73daca" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"/>
 </svg>

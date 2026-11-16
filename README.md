@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" width="120" alt="Logo de protas: una hoja de notas con una lista de tareas">
+  <img src="assets/logo.svg" width="120" alt="Logo de protas: un marco de terminal con una lista de tareas">
 </p>
 
 <h1 align="center">protas</h1>
@@ -10,12 +10,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.11%2B-1f7a6d" alt="Python 3.11 o superior">
-  <img src="https://img.shields.io/badge/dependencias-ninguna-1f7a6d" alt="Sin dependencias">
-  <img src="https://img.shields.io/badge/datos-SQLite%20local-1f7a6d" alt="Datos en SQLite local">
-  <img src="https://img.shields.io/badge/interfaz-CLI%20%2B%20TUI-1f7a6d" alt="Interfaz de línea de comandos y TUI">
-  <img src="https://img.shields.io/badge/Omarchy-panel%20opcional-1f7a6d" alt="Panel opcional para Omarchy">
-  <img src="https://img.shields.io/badge/licencia-MIT-1f7a6d" alt="Licencia MIT">
+  <img src="https://img.shields.io/badge/python-3.11%2B-73daca" alt="Python 3.11 o superior">
+  <img src="https://img.shields.io/badge/dependencias-ninguna-73daca" alt="Sin dependencias">
+  <img src="https://img.shields.io/badge/datos-SQLite%20local-73daca" alt="Datos en SQLite local">
+  <img src="https://img.shields.io/badge/interfaz-CLI%20%2B%20TUI-73daca" alt="Interfaz de línea de comandos y TUI">
+  <img src="https://img.shields.io/badge/Omarchy-panel%20opcional-73daca" alt="Panel opcional para Omarchy">
+  <img src="https://img.shields.io/badge/licencia-MIT-73daca" alt="Licencia MIT">
 </p>
 
 <p align="center">
